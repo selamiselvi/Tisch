@@ -9,7 +9,15 @@ const clonePlanner = (data: PlannerData): PlannerData =>
 function normalizePlanner(input: unknown): PlannerData {
   const planner = input as PlannerData
   if (planner?.schemaVersion === 2 && Array.isArray(planner.items)) {
-    return planner
+    // Backfill the `kind` field introduced after initial release: items
+    // created before this migration are treated as scripts so they keep
+    // showing up in the Skripte sidebar.
+    return {
+      ...planner,
+      items: planner.items.map((item) =>
+        item.kind ? item : { ...item, kind: 'script' },
+      ),
+    }
   }
 
   return clonePlanner(seedPlannerData)

@@ -2,6 +2,8 @@ export type ProjectId = string
 
 export type ViewMode = 'page' | 'canvas' | 'board'
 
+export type ItemKind = 'script' | 'reference'
+
 export interface Project {
   id: ProjectId
   name: string
@@ -20,6 +22,13 @@ export interface Item {
   status: string
   done: boolean
   imagePath?: string
+  /**
+   * 'script'     — Markdown page listed in the "Skripte" sidebar.
+   * 'reference'  — listed in "Referenzen".
+   * undefined    — canvas-only: exists as a node in a canvas but has not
+   *                been promoted to its own page.
+   */
+  kind?: ItemKind
   createdAt: string
   updatedAt: string
 }
