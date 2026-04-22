@@ -3,13 +3,47 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const isDev = !app.isPackaged
-const workspaceDir =
-  process.env.PLANNER_WORKSPACE_DIR || path.join(process.cwd(), 'workspace')
-const plannerPath = path.join(workspaceDir, 'planner.json')
-const pagesDir = path.join(workspaceDir, 'pages')
+const legacyWorkspaceDir = path.join(process.cwd(), 'workspace')
+
+function getWorkspaceDir() {
+  return (
+    process.env.PLANNER_WORKSPACE_DIR ||
+    path.join(app.getPath('userData'), 'workspace')
+  )
+}
+
+function getPlannerPath() {
+  return path.join(getWorkspaceDir(), 'planner.json')
+}
+
+function getPagesDir() {
+  return path.join(getWorkspaceDir(), 'pages')
+}
 
 function ensureWorkspace() {
-  fs.mkdirSync(pagesDir, { recursive: true })
+  fs.mkdirSync(getPagesDir(), { recursive: true })
+}
+
+function hasWorkspaceData(dirPath) {
+  return fs.existsSync(path.join(dirPath, 'planner.json'))
+}
+
+function migrateLegacyWorkspace() {
+  if (process.env.PLANNER_WORKSPACE_DIR) {
+    return
+  }
+
+  const workspaceDir = getWorkspaceDir()
+  if (hasWorkspaceData(workspaceDir) || !hasWorkspaceData(legacyWorkspaceDir)) {
+    return
+  }
+
+  fs.mkdirSync(workspaceDir, { recursive: true })
+  fs.cpSync(legacyWorkspaceDir, workspaceDir, {
+    recursive: true,
+    force: false,
+    errorOnExist: false,
+  })
 }
 
 function readJson(filePath) {
@@ -25,7 +59,7 @@ function readItemContent(item) {
     return ''
   }
 
-  const fullPath = path.join(workspaceDir, item.contentPath)
+  const fullPath = path.join(getWorkspaceDir(), item.contentPath)
   if (!fs.existsSync(fullPath)) {
     return ''
   }
@@ -38,14 +72,14 @@ function writeItemContent(item) {
     return
   }
 
-  const fullPath = path.join(workspaceDir, item.contentPath)
+  const fullPath = path.join(getWorkspaceDir(), item.contentPath)
   fs.mkdirSync(path.dirname(fullPath), { recursive: true })
   fs.writeFileSync(fullPath, item.content || '', 'utf8')
 }
 
 function loadWorkspace() {
   ensureWorkspace()
-  const data = readJson(plannerPath)
+  const data = readJson(getPlannerPath())
 
   if (!data) {
     return null
@@ -75,7 +109,11 @@ function saveWorkspace(data) {
     updatedAt: now,
   }
 
-  fs.writeFileSync(plannerPath, `${JSON.stringify(fileData, null, 2)}\n`, 'utf8')
+  fs.writeFileSync(
+    getPlannerPath(),
+    `${JSON.stringify(fileData, null, 2)}\n`,
+    'utf8',
+  )
 
   return {
     ...fileData,
@@ -109,7 +147,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  ipcMain.handle('planner:getWorkspacePath', () => workspaceDir)
+  migrateLegacyWorkspace()
+
+  ipcMain.handle('planner:getWorkspacePath', () => getWorkspaceDir())
   ipcMain.handle('planner:loadWorkspace', () => loadWorkspace())
   ipcMain.handle('planner:saveWorkspace', (_event, data) => saveWorkspace(data))
 

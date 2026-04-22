@@ -1,6 +1,6 @@
 # Tisch
 
-Lokale Desktop-App zum Planen, Schreiben und Ordnen von Ideen. Tisch ist kein gehostetes Tool: alle Daten liegen lesbar im Projektordner und koennen per Git/GitHub gesichert werden.
+Lokale Desktop-App zum Planen, Schreiben und Ordnen von Ideen. Tisch ist kein gehostetes Tool: Nutzdaten liegen lokal auf dem Rechner im App-Datenordner und nicht im Git-Repository.
 
 ## Idee
 
@@ -43,16 +43,18 @@ npm run electron:preview
 
 ## Lokale Daten
 
-Der Workspace liegt im Projektordner:
+Der Workspace liegt standardmaessig unter `app.getPath('userData')/workspace`, also im betriebssystemspezifischen App-Datenordner. Damit landen Nutzdaten nicht mehr in Git-Diffs oder auf GitHub.
 
 ```text
-workspace/
+<userData>/workspace/
   planner.json
   pages/
     beispiel.md
 ```
 
-`planner.json` enthaelt Projekte, Items, Boards, Canvas-Nodes und Links. Lange Texte liegen als echte Markdown-Dateien unter `workspace/pages/`.
+`planner.json` enthaelt Projekte, Items, Boards, Canvas-Nodes und Links. Lange Texte liegen als echte Markdown-Dateien unter `pages/`.
+
+Fuer Entwicklung oder bewusste Dateiablaeufe kann der Speicherort mit `PLANNER_WORKSPACE_DIR=/pfad/zum/workspace` ueberschrieben werden.
 
 ## UI-Grundstruktur
 
