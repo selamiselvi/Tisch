@@ -1,193 +1,169 @@
 import type { PlannerData } from '../types'
 
+const now = new Date().toISOString()
+
 export const seedPlannerData: PlannerData = {
-  schemaVersion: 1,
-  updatedAt: new Date().toISOString(),
+  schemaVersion: 2,
+  updatedAt: now,
   projects: [
     {
       id: 'launch-plan',
       name: 'Launch Plan',
       accent: '#2563eb',
-      description: 'Produkt, User proof, Short-form-Ideen und App-Demos.',
+      description: 'Produktideen, Abläufe, Skripte und offene Gedanken.',
     },
     {
       id: 'research',
       name: 'research',
       accent: '#0f766e',
-      description: 'Kurzdialoge, Lernfortschritt und Sprachlern-Content.',
+      description: 'Lernprodukt, Sprachlogik, Inhalte und Experimente.',
     },
     {
       id: 'operations',
       name: 'Operations',
       accent: '#b45309',
-      description: 'Workflow utility, Vertrauen, Use Cases und Conversion.',
+      description: 'Workflow utility, Dokumente, Workflows und Kommunikation.',
     },
     {
       id: 'lab',
-      name: 'Ideen-Labor',
-      accent: '#7c3aed',
-      description: 'Freie Experimente, Hook-Sammlungen und lose Formate.',
+      name: 'Labor',
+      accent: '#6d5dfc',
+      description: 'Freie Ideen ohne Projektbindung.',
+    },
+  ],
+  items: [
+    {
+      id: 'item-launch-plan-overview',
+      projectId: 'launch-plan',
+      title: 'Launch Plan Arbeitsnotiz',
+      summary: 'Eine freie Seite fuer Gedanken, Szenen, Rohtext und offene Fragen.',
+      contentPath: 'pages/launch-plan-arbeitsnotiz.md',
+      tags: ['Seite'],
+      status: 'planung',
+      done: false,
+      createdAt: now,
+      updatedAt: now,
+      content: `# Launch Plan Arbeitsnotiz
+
+Das ist eine normale Seite. Sie kann allein stehen, im Board als Karte erscheinen und auf dem Canvas als Node platziert werden.
+
+## Gedanken
+
+- Was ist der kleinste starke Einstieg?
+- Welche Bilder oder Screenshots brauchen wir?
+- Welche Version ist als naechstes produktionsreif?
+`,
+    },
+    {
+      id: 'item-launch-plan-hook',
+      projectId: 'launch-plan',
+      title: 'Hook: schlechtes listing image',
+      summary: 'Dieses eine Foto kann entscheiden, ob jemand dein Auto ueberhaupt anklickt.',
+      contentPath: 'pages/hook-schlechtes-inseratfoto.md',
+      tags: ['Hook', 'Idee'],
+      status: 'planung',
+      done: false,
+      createdAt: now,
+      updatedAt: now,
+      content: `# Hook: schlechtes listing image
+
+Dieses eine Foto kann entscheiden, ob jemand dein Auto ueberhaupt anklickt.
+
+Kurz, direkt, ohne Erklaerung starten. Danach erst zeigen, warum das Bild schwach ist.
+`,
+    },
+    {
+      id: 'item-launch-plan-scenes',
+      projectId: 'launch-plan',
+      title: 'Szenenfolge',
+      summary: 'Originalbild, Upload, Ergebnis, Vergleich.',
+      contentPath: 'pages/szenenfolge.md',
+      tags: ['Ablauf'],
+      status: 'arbeit',
+      done: false,
+      createdAt: now,
+      updatedAt: now,
+      content: `# Szenenfolge
+
+1. Ausgangsbild zeigen.
+2. Upload oder Auswahl zeigen.
+3. Varianten als kurzer Reveal.
+4. Bessere Anzeige als Abschlussbild.
+`,
     },
   ],
   boards: [
     {
-      id: 'launch-plan-tiktok-board',
-      title: 'Launch Plan Short-form Pipeline',
+      id: 'board-launch-plan',
+      title: 'Launch Plan Board',
       projectId: 'launch-plan',
-      description:
-        'Von roher Posting-Idee bis produktionsbereit. Karten koennen mit Canvas und Notizen verknuepft werden.',
       columns: [
-        { id: 'idea', title: 'Idee' },
-        { id: 'planned', title: 'Geplant' },
-        { id: 'script', title: 'Skript' },
-        { id: 'ready', title: 'Bereit' },
+        { id: 'planung', title: 'Planung' },
+        { id: 'arbeit', title: 'In Arbeit' },
+        { id: 'fertig', title: 'Fertig' },
       ],
       cards: [
         {
-          id: 'card-before-after-hook',
-          title: 'Vorher/Nachher als kalter Scroll-Stopp',
-          summary:
-            'Short-form beginnt mit einem schlechten listing image und zeigt dann die bessere Version.',
-          projectId: 'launch-plan',
-          columnId: 'idea',
-          tags: ['Short-form', 'Hook', 'Demo'],
-          noteIds: ['note-launch-plan-script'],
-          canvasIds: ['canvas-launch-plan-demo'],
+          id: 'card-launch-plan-hook',
+          itemId: 'item-launch-plan-hook',
+          columnId: 'planung',
         },
         {
-          id: 'card-five-mistakes',
-          title: '5 Fehler bei Auto-listing images',
-          summary:
-            'Schnelle Liste mit konkreten Bildfehlern, danach Launch Plan als Abkuerzung.',
-          projectId: 'launch-plan',
-          columnId: 'planned',
-          tags: ['Educational', 'Carousel'],
-          noteIds: [],
-          canvasIds: [],
-        },
-        {
-          id: 'card-ai-demo',
-          title: 'Ein Bild reicht fuer ein ganzes Set',
-          summary:
-            'Kurze Produktdemo: Upload, Varianten, bessere Anzeige, Call to Action.',
-          projectId: 'launch-plan',
-          columnId: 'script',
-          tags: ['Produktdemo', 'Short-form'],
-          noteIds: ['note-launch-plan-script'],
-          canvasIds: ['canvas-launch-plan-demo'],
+          id: 'card-launch-plan-scenes',
+          itemId: 'item-launch-plan-scenes',
+          columnId: 'arbeit',
         },
       ],
     },
   ],
   canvases: [
     {
-      id: 'canvas-launch-plan-demo',
-      title: 'Launch Plan Demo-Video Szenen',
+      id: 'canvas-launch-plan',
+      title: 'Launch Plan Canvas',
       projectId: 'launch-plan',
-      description:
-        'Freie Canvas fuer Hook, Szenenfolge und Verbindungen zwischen Gedanken.',
       nodes: [
         {
-          id: 'node-hook',
-          title: 'Hook',
-          body: 'Dieses Foto kostet dich wahrscheinlich Anfragen.',
-          kind: 'hook',
-          x: 40,
-          y: 110,
-          refs: [{ kind: 'card', id: 'card-before-after-hook' }],
+          id: 'node-launch-plan-overview',
+          itemId: 'item-launch-plan-overview',
+          x: 80,
+          y: 130,
+          width: 230,
         },
         {
-          id: 'node-scene-upload',
-          title: 'Szene 1',
-          body: 'Schlechtes Originalbild zeigen, dann Upload in Launch Plan.',
-          kind: 'scene',
-          x: 360,
-          y: 50,
-          refs: [],
+          id: 'node-launch-plan-hook',
+          itemId: 'item-launch-plan-hook',
+          x: 400,
+          y: 90,
+          width: 240,
         },
         {
-          id: 'node-scene-result',
-          title: 'Szene 2',
-          body: 'Mehrere saubere Varianten nebeneinander zeigen.',
-          kind: 'scene',
-          x: 680,
-          y: 150,
-          refs: [],
-        },
-        {
-          id: 'node-script',
-          title: 'Skript',
-          body: 'Ausformulierung in Markdown-Notiz.',
-          kind: 'beat',
-          x: 360,
-          y: 310,
-          refs: [{ kind: 'note', id: 'note-launch-plan-script' }],
+          id: 'node-launch-plan-scenes',
+          itemId: 'item-launch-plan-scenes',
+          x: 400,
+          y: 300,
+          width: 240,
         },
       ],
       edges: [
         {
-          id: 'edge-hook-upload',
-          source: 'node-hook',
-          target: 'node-scene-upload',
-          label: 'Start',
+          id: 'edge-launch-plan-hook-scenes',
+          source: 'node-launch-plan-hook',
+          target: 'node-launch-plan-scenes',
         },
         {
-          id: 'edge-upload-result',
-          source: 'node-scene-upload',
-          target: 'node-scene-result',
-          label: 'Reveal',
-        },
-        {
-          id: 'edge-script-scenes',
-          source: 'node-script',
-          target: 'node-scene-upload',
-          label: 'Text',
+          id: 'edge-launch-plan-overview-hook',
+          source: 'node-launch-plan-overview',
+          target: 'node-launch-plan-hook',
         },
       ],
     },
   ],
-  notes: [
-    {
-      id: 'note-launch-plan-script',
-      title: 'Launch Plan Short-form Skript - Demo',
-      projectId: 'launch-plan',
-      path: 'notes/launch-plan-tiktok-demo.md',
-      tags: ['Skript', 'Short-form', 'Demo'],
-      linkedResourceIds: ['card-ai-demo', 'canvas-launch-plan-demo'],
-      content: `# Launch Plan Short-form Skript - Demo
-
-## Hook
-"Dieses eine Foto kann entscheiden, ob jemand dein Auto ueberhaupt anklickt."
-
-## Szenen
-
-1. Schlechtes listing image zeigen.
-2. Kurz in Launch Plan ziehen.
-3. Drei bessere Varianten zeigen.
-4. Screenshot vom besseren Inserat.
-
-## Voiceover
-
-Viele Autoinserate verlieren Aufmerksamkeit, bevor der Text ueberhaupt gelesen wird. Launch Plan macht aus einem normalen Upload direkt bessere Varianten fuer dein Inserat.
-
-## CTA
-
-Probier es mit deinem schlechtesten Foto aus.
-`,
-    },
-  ],
   links: [
     {
-      id: 'link-card-canvas',
-      from: { kind: 'card', id: 'card-ai-demo' },
-      to: { kind: 'canvas', id: 'canvas-launch-plan-demo' },
-      label: 'Szenenplanung',
-    },
-    {
-      id: 'link-note-card',
-      from: { kind: 'note', id: 'note-launch-plan-script' },
-      to: { kind: 'card', id: 'card-ai-demo' },
-      label: 'Skript',
+      id: 'link-hook-scenes',
+      fromItemId: 'item-launch-plan-hook',
+      toItemId: 'item-launch-plan-scenes',
+      label: 'fuehrt zu',
     },
   ],
 }

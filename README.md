@@ -1,10 +1,16 @@
-# Social Media Planning
+# Tisch
 
-Lokale Desktop-App zum Planen von Social-Media-Postings, Skripten, Hooks und Content-Pipelines. Die App ist fuer den Laptop gedacht: alle Daten liegen lesbar im Projektordner und koennen per GitHub gesichert werden.
+Lokale Desktop-App zum Planen, Schreiben und Ordnen von Ideen. Tisch ist kein gehostetes Tool: alle Daten liegen lesbar im Projektordner und koennen per Git/GitHub gesichert werden.
 
-## Ziel
+## Idee
 
-Dieses Projekt ist die Planungszentrale vor der eigentlichen Posting-Produktion. Es soll Ideen, Kanban-Boards, freie Canvas-Planung und Markdown-Skripte miteinander verbinden, damit Menschen und KI-Agenten dieselben lokalen Daten bearbeiten koennen.
+Der Kern ist ein gemeinsames Objektmodell. Eine Sache kann gleichzeitig sein:
+
+- eine Seite mit langem Text
+- eine Karte in einem Board
+- ein Node auf einem Canvas
+
+Diese Darstellungen sind keine getrennten Daten. Board-Karten und Canvas-Nodes zeigen dasselbe `Item`, das auch eine volle Seite mit Markdown-Inhalt besitzt.
 
 ## Stack
 
@@ -12,10 +18,10 @@ Dieses Projekt ist die Planungszentrale vor der eigentlichen Posting-Produktion.
 - React + TypeScript fuer die Oberflaeche
 - Vite fuer schnelles Entwickeln
 - React Flow fuer Canvas/Node-Verbindungen
-- react-markdown fuer Markdown-Ansicht
+- react-markdown fuer Seiten-Preview
 - lokale JSON- und Markdown-Dateien als Datenbasis
 
-Tauri bleibt eine moegliche spaetere Shell-Alternative, aber aktuell ist Electron bewusst gewaehlt, weil Node/npm vorhanden sind und die App sofort als eigenes Programm laeuft. Das Datenmodell und die `plannerApi` sind von der Shell getrennt, damit die lokalen Dateien nicht an Electron gebunden sind.
+Tauri bleibt eine moegliche spaetere Shell-Alternative. Aktuell ist Electron gewaehlt, weil Node/npm vorhanden sind und die App direkt als eigenes Programm laeuft.
 
 ## Starten
 
@@ -37,16 +43,25 @@ npm run electron:preview
 
 ## Lokale Daten
 
-Beim ersten Start legt die App den Workspace hier an:
+Der Workspace liegt im Projektordner:
 
 ```text
 workspace/
   planner.json
-  notes/
-    launch-plan-tiktok-demo.md
+  pages/
+    beispiel.md
 ```
 
-`planner.json` enthaelt Projekte, Boards, Karten, Canvases, Nodes und Verbindungen. Markdown-Inhalte liegen als echte `.md`-Dateien unter `workspace/notes/`.
+`planner.json` enthaelt Projekte, Items, Boards, Canvas-Nodes und Links. Lange Texte liegen als echte Markdown-Dateien unter `workspace/pages/`.
+
+## UI-Grundstruktur
+
+- Linkes Paneel: Projekte und Objektliste, einklappbar
+- Mitte: aktive Arbeitsflaeche
+- Rechtes Paneel: Inspector fuer Status, Darstellungen, Datei und Links, optional einklappbar
+- Seite: ein einzelner Schreib-/Lesebereich mit Toggle `Edit` / `Preview`
+- Canvas: einfache Text-/Bild-Nodes mit Linien zwischen Nodes
+- Board: flexible Spalten, Karten, Done-Markierung und Ausblenden fertiger Items
 
 ## KI-freundliche API
 
@@ -58,35 +73,26 @@ In Electron stellt `electron/preload.cjs` diese Funktionen bereit:
 - `window.planner.loadWorkspace()`
 - `window.planner.saveWorkspace(data)`
 
-Das macht die App fuer Codex und andere lokale KI-Agenten angenehm manipulierbar: Ein Agent kann entweder die Workspace-Dateien direkt bearbeiten oder ueber dieselbe Datenstruktur arbeiten wie die UI.
+Dadurch koennen Codex und andere lokale KI-Agenten die App ueber dieselbe Datenstruktur manipulieren wie die UI.
 
 ## Datenmodell
 
 Die zentralen Typen liegen in `src/types.ts`:
 
 - `Project`
+- `Item`
 - `Board`
 - `BoardCard`
 - `IdeaCanvas`
 - `CanvasNode`
-- `NoteDoc`
 - `PlannerLink`
 - `PlannerData`
 
-Die erste Version startet mit drei Arbeitsmodi:
-
-- Board: Kanban-Pipeline fuer Posting-Status
-- Canvas: visuelle Szenen- und Ideenplanung
-- Markdown: Skripte und Notizen mit Live-Preview
-
-## GitHub
-
-Dieses Repository kann normal versioniert werden. Sinnvoll ist, `workspace/` mitzunehmen, wenn die Planungsdaten selbst gesichert werden sollen. Falls nur die App geteilt werden soll, kann `workspace/` spaeter in `.gitignore` aufgenommen werden.
-
 ## Naechste Ausbaustufen
 
-- mehrere Boards und Canvases pro Projekt anlegen/waehlen
-- direkte Bearbeitung von Kartentitel, Tags und Zusammenfassung
-- bessere Link-Verwaltung zwischen Karten, Nodes und Notizen
+- Item-Editor fuer Tags, Status und Bildpfad
+- echte Link-Verwaltung zwischen Items
+- mehrere Boards und Canvases pro Projekt
+- Bildimport fuer Canvas-Nodes
 - GitHub-Sync aus der App heraus
-- optionaler Import/Export fuer andere lokale Workspaces
+- saubere Migration alter Workspace-Versionen

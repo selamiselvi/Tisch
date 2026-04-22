@@ -6,11 +6,20 @@ const storageKey = 'socialmedia-planning.workspace'
 const clonePlanner = (data: PlannerData): PlannerData =>
   JSON.parse(JSON.stringify(data)) as PlannerData
 
+function normalizePlanner(input: unknown): PlannerData {
+  const planner = input as PlannerData
+  if (planner?.schemaVersion === 2 && Array.isArray(planner.items)) {
+    return planner
+  }
+
+  return clonePlanner(seedPlannerData)
+}
+
 export async function loadPlanner(): Promise<PlannerData> {
   if (window.planner) {
     const saved = await window.planner.loadWorkspace()
     if (saved) {
-      return saved
+      return normalizePlanner(saved)
     }
 
     const seeded = clonePlanner(seedPlannerData)
@@ -19,7 +28,7 @@ export async function loadPlanner(): Promise<PlannerData> {
 
   const saved = window.localStorage.getItem(storageKey)
   if (saved) {
-    return JSON.parse(saved) as PlannerData
+    return normalizePlanner(JSON.parse(saved))
   }
 
   const seeded = clonePlanner(seedPlannerData)

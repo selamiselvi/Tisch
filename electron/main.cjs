@@ -6,10 +6,10 @@ const isDev = !app.isPackaged
 const workspaceDir =
   process.env.PLANNER_WORKSPACE_DIR || path.join(process.cwd(), 'workspace')
 const plannerPath = path.join(workspaceDir, 'planner.json')
-const notesDir = path.join(workspaceDir, 'notes')
+const pagesDir = path.join(workspaceDir, 'pages')
 
 function ensureWorkspace() {
-  fs.mkdirSync(notesDir, { recursive: true })
+  fs.mkdirSync(pagesDir, { recursive: true })
 }
 
 function readJson(filePath) {
@@ -20,12 +20,12 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'))
 }
 
-function readNoteContent(note) {
-  if (!note.path) {
+function readItemContent(item) {
+  if (!item.contentPath) {
     return ''
   }
 
-  const fullPath = path.join(workspaceDir, note.path)
+  const fullPath = path.join(workspaceDir, item.contentPath)
   if (!fs.existsSync(fullPath)) {
     return ''
   }
@@ -33,14 +33,14 @@ function readNoteContent(note) {
   return fs.readFileSync(fullPath, 'utf8')
 }
 
-function writeNoteContent(note) {
-  if (!note.path) {
+function writeItemContent(item) {
+  if (!item.contentPath) {
     return
   }
 
-  const fullPath = path.join(workspaceDir, note.path)
+  const fullPath = path.join(workspaceDir, item.contentPath)
   fs.mkdirSync(path.dirname(fullPath), { recursive: true })
-  fs.writeFileSync(fullPath, note.content || '', 'utf8')
+  fs.writeFileSync(fullPath, item.content || '', 'utf8')
 }
 
 function loadWorkspace() {
@@ -53,9 +53,9 @@ function loadWorkspace() {
 
   return {
     ...data,
-    notes: (data.notes || []).map((note) => ({
-      ...note,
-      content: readNoteContent(note),
+    items: (data.items || []).map((item) => ({
+      ...item,
+      content: readItemContent(item),
     })),
   }
 }
@@ -63,15 +63,15 @@ function loadWorkspace() {
 function saveWorkspace(data) {
   ensureWorkspace()
   const now = new Date().toISOString()
-  const notes = (data.notes || []).map((note) => {
-    writeNoteContent(note)
-    const { content, ...metadata } = note
+  const items = (data.items || []).map((item) => {
+    writeItemContent(item)
+    const { content, ...metadata } = item
     return metadata
   })
 
   const fileData = {
     ...data,
-    notes,
+    items,
     updatedAt: now,
   }
 
@@ -79,7 +79,7 @@ function saveWorkspace(data) {
 
   return {
     ...fileData,
-    notes: data.notes || [],
+    items: data.items || [],
   }
 }
 
@@ -89,8 +89,8 @@ function createWindow() {
     height: 940,
     minWidth: 1160,
     minHeight: 760,
-    title: 'Social Media Planning',
-    backgroundColor: '#f6f5f1',
+    title: 'Tisch',
+    backgroundColor: '#f7f7f5',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
