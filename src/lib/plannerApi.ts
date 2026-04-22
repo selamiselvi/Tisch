@@ -9,13 +9,12 @@ const clonePlanner = (data: PlannerData): PlannerData =>
 function normalizePlanner(input: unknown): PlannerData {
   const planner = input as PlannerData
   if (planner?.schemaVersion === 2 && Array.isArray(planner.items)) {
-    // Backfill the `kind` field introduced after initial release: items
-    // created before this migration are treated as scripts so they keep
-    // showing up in the Skripte sidebar.
+    // Keep older items visible as scripts. This also folds the removed
+    // `reference` kind into the remaining script/page model.
     return {
       ...planner,
       items: planner.items.map((item) =>
-        item.kind ? item : { ...item, kind: 'script' },
+        item.kind === 'script' ? item : { ...item, kind: 'script' },
       ),
     }
   }
@@ -64,4 +63,12 @@ export async function getWorkspacePath(): Promise<string> {
   }
 
   return 'Browser localStorage fallback'
+}
+
+export async function pickImage(): Promise<string | null> {
+  if (window.planner?.pickImage) {
+    return window.planner.pickImage()
+  }
+
+  return null
 }

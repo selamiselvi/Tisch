@@ -5,6 +5,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
+import Image from '@tiptap/extension-image'
 import { TableKit } from '@tiptap/extension-table/kit'
 import { Markdown } from '@tiptap/markdown'
 import {
@@ -290,6 +291,10 @@ export function MarkdownEditor({
           rel: 'noopener noreferrer',
           target: '_blank',
         },
+      }),
+      Image.configure({
+        inline: false,
+        allowBase64: true,
       }),
       TaskList,
       TaskItem.configure({

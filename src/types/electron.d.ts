@@ -6,6 +6,7 @@ declare global {
       getWorkspacePath: () => Promise<string>
       loadWorkspace: () => Promise<PlannerData | null>
       saveWorkspace: (data: PlannerData) => Promise<PlannerData>
+      pickImage: () => Promise<string | null>
     }
   }
 }

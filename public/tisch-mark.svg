@@ -1,0 +1,32 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 256 256"
+  role="img"
+  aria-labelledby="title"
+>
+  <title>Tisch mark</title>
+  <path
+    fill="#000"
+    d="M128 50 204 94 128 138 52 94l76-44Z"
+  />
+  <path
+    fill="#000"
+    d="M54 100.5 120 138v18l-54-31.3V100.5Z"
+  />
+  <path
+    fill="#000"
+    d="M202 100.5 136 138v18l54-31.3V100.5Z"
+  />
+  <path
+    fill="#000"
+    d="M126 146h12v80l-12 7-12-7v-80h12Z"
+  />
+  <path
+    fill="#000"
+    d="M62 118.5 74 125.5v62.5l-12 7-12-7v-62.5l12-7Z"
+  />
+  <path
+    fill="#000"
+    d="M194 118.5 206 125.5v62.5l-12 7-12-7v-62.5l12-7Z"
+  />
+</svg>

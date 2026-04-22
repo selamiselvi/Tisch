@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -20,8 +20,27 @@ function getPagesDir() {
   return path.join(getWorkspaceDir(), 'pages')
 }
 
+function getImagesDir() {
+  return path.join(getWorkspaceDir(), 'images')
+}
+
+function getWindowIconPath() {
+  return isDev
+    ? path.join(process.cwd(), 'public', 'tisch-mark.svg')
+    : path.join(__dirname, '..', 'dist', 'tisch-mark.svg')
+}
+
 function ensureWorkspace() {
   fs.mkdirSync(getPagesDir(), { recursive: true })
+}
+
+function sanitizeFileStem(value) {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '') || 'image'
+  )
 }
 
 function hasWorkspaceData(dirPath) {
@@ -121,6 +140,41 @@ function saveWorkspace(data) {
   }
 }
 
+function importImage(sourcePath) {
+  ensureWorkspace()
+  fs.mkdirSync(getImagesDir(), { recursive: true })
+
+  const extension = path.extname(sourcePath) || '.png'
+  const stem = sanitizeFileStem(path.basename(sourcePath, extension))
+  const fileName = `${stem}-${Date.now()}${extension.toLowerCase()}`
+  const relativePath = path.posix.join('images', fileName)
+  const targetPath = path.join(getWorkspaceDir(), relativePath)
+
+  fs.copyFileSync(sourcePath, targetPath)
+
+  return relativePath
+}
+
+async function pickImage() {
+  const win = BrowserWindow.getFocusedWindow()
+  const result = await dialog.showOpenDialog(win ?? undefined, {
+    title: 'Bild auswählen',
+    properties: ['openFile'],
+    filters: [
+      {
+        name: 'Bilder',
+        extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'],
+      },
+    ],
+  })
+
+  if (result.canceled || !result.filePaths[0]) {
+    return null
+  }
+
+  return importImage(result.filePaths[0])
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1480,
@@ -129,6 +183,7 @@ function createWindow() {
     minHeight: 760,
     title: 'Tisch',
     backgroundColor: '#f7f7f5',
+    icon: nativeImage.createFromPath(getWindowIconPath()),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
@@ -152,6 +207,7 @@ app.whenReady().then(() => {
   ipcMain.handle('planner:getWorkspacePath', () => getWorkspaceDir())
   ipcMain.handle('planner:loadWorkspace', () => loadWorkspace())
   ipcMain.handle('planner:saveWorkspace', (_event, data) => saveWorkspace(data))
+  ipcMain.handle('planner:pickImage', () => pickImage())
 
   createWindow()
 

@@ -2,7 +2,7 @@ export type ProjectId = string
 
 export type ViewMode = 'page' | 'canvas' | 'board'
 
-export type ItemKind = 'script' | 'reference'
+export type ItemKind = 'script'
 
 export interface Project {
   id: ProjectId
@@ -24,7 +24,6 @@ export interface Item {
   imagePath?: string
   /**
    * 'script'     — Markdown page listed in the "Skripte" sidebar.
-   * 'reference'  — listed in "Referenzen".
    * undefined    — canvas-only: exists as a node in a canvas but has not
    *                been promoted to its own page.
    */
@@ -58,12 +57,15 @@ export interface CanvasNode {
   x: number
   y: number
   width?: number
+  height?: number
 }
 
 export interface CanvasEdge {
   id: string
   source: string
   target: string
+  sourceHandle?: string | null
+  targetHandle?: string | null
 }
 
 export interface IdeaCanvas {

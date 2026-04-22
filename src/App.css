@@ -142,13 +142,16 @@ a {
 
 .sidebar-brand .brand-mark {
   align-items: center;
-  background: #1c1917;
-  border-radius: 6px;
-  color: #fafaf9;
   display: inline-flex;
-  height: 22px;
+  height: 24px;
   justify-content: center;
-  width: 22px;
+  width: 24px;
+}
+
+.sidebar-brand .brand-icon {
+  display: block;
+  height: 100%;
+  width: 100%;
 }
 
 .sidebar-brand strong {
@@ -241,22 +244,40 @@ a {
 
 .project-detail-header {
   align-items: center;
-  background: transparent;
-  border-radius: 6px;
-  color: var(--color-text);
   display: flex;
-  font-size: 13px;
-  font-weight: 600;
   gap: 6px;
   height: 28px;
-  justify-content: space-between;
-  padding: 0 8px;
-  text-align: left;
   width: 100%;
 }
 
-.project-detail-header:hover {
+.project-detail-toggle {
+  align-items: center;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--color-text);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.project-detail-toggle:hover {
   background: var(--color-bg-muted);
+}
+
+.sidebar-title-label {
+  color: var(--color-text);
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  height: 28px;
+  line-height: 28px;
+  min-width: 0;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .category-list {
@@ -340,6 +361,57 @@ a {
   white-space: nowrap;
 }
 
+.project-row.is-editing,
+.page-row.is-editing {
+  background: var(--color-bg-muted);
+}
+
+.sidebar-inline-input {
+  background: var(--color-bg);
+  border: 0;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+  color: var(--color-text);
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  height: 24px;
+  min-width: 0;
+  outline: none;
+  padding: 0 8px;
+}
+
+.sidebar-context-menu {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 18px 40px rgb(28 25 23 / 0.16);
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 6px;
+  position: fixed;
+  z-index: 80;
+}
+
+.sidebar-context-item {
+  align-items: center;
+  background: transparent;
+  border-radius: 7px;
+  color: var(--color-text);
+  display: inline-flex;
+  font-size: 13px;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.sidebar-context-item:hover {
+  background: var(--color-bg-muted);
+}
+
 /* ------------------------------------------------------------------ */
 /* Workspace (right of sidebar)                                        */
 /* ------------------------------------------------------------------ */
@@ -382,16 +454,14 @@ a {
   border-radius: 10px;
   box-shadow: 0 8px 24px rgb(28 25 23 / 0.08);
   display: inline-flex;
-  gap: 2px;
-  left: 50%;
+  left: 18px;
   padding: 5px;
   position: absolute;
   top: 18px;
-  transform: translateX(-50%);
   z-index: 30;
 }
 
-.tool-button {
+.canvas-action-button {
   align-items: center;
   background: transparent;
   border-radius: 7px;
@@ -399,23 +469,11 @@ a {
   display: inline-flex;
   height: 34px;
   justify-content: center;
-  transition:
-    background-color 140ms ease,
-    color 140ms ease;
   width: 34px;
 }
 
-.tool-button:hover {
+.canvas-action-button:hover {
   background: var(--color-bg-muted);
-}
-
-.tool-button.active {
-  background: var(--color-accent);
-  color: #ffffff;
-}
-
-.tool-button.active:hover {
-  background: var(--color-accent);
 }
 
 /* Zoom controls */
@@ -429,7 +487,7 @@ a {
   gap: 0;
   padding: 4px;
   position: absolute;
-  right: 140px;
+  right: 178px;
   top: 18px;
   z-index: 30;
 }
@@ -497,19 +555,146 @@ a {
   color: var(--color-text);
 }
 
-/* Undo / redo in the bottom-right corner */
+.react-flow__handle.canvas-node-handle {
+  background: color-mix(in srgb, var(--color-border-strong) 55%, transparent);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: none;
+  height: 7px;
+  opacity: 0;
+  transition: opacity 140ms ease, transform 140ms ease, background 140ms ease;
+  width: 7px;
+}
+
+.react-flow__node-tischNode:hover .react-flow__handle.canvas-node-handle,
+.react-flow__node-tischNode.selected .react-flow__handle.canvas-node-handle,
+.react-flow__node-tischNode.selectable.selected
+  .react-flow__handle.canvas-node-handle {
+  opacity: 0.7;
+}
+
+.react-flow__handle.canvas-node-handle:hover {
+  background: var(--color-text);
+  opacity: 1;
+  transform: scale(1.6);
+}
+
+.react-flow__handle.canvas-node-handle.connectingfrom,
+.react-flow__handle.canvas-node-handle.connectionindicator,
+.react-flow__handle.canvas-node-handle.valid {
+  background: var(--color-text);
+  opacity: 1;
+}
+
+.canvas-note-node {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 22px;
+  box-shadow: 0 10px 24px rgb(28 25 23 / 0.06);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 14px 16px 16px;
+  position: relative;
+  width: 100%;
+}
+
+.canvas-note-node.is-selected {
+  border-color: color-mix(in srgb, var(--color-border-strong) 58%, transparent);
+  box-shadow:
+    0 10px 24px rgb(28 25 23 / 0.06),
+    0 0 0 1px color-mix(in srgb, var(--color-border-strong) 18%, transparent);
+}
+
+.canvas-note-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 2px;
+  position: relative;
+  z-index: 2;
+}
+
+.canvas-node-open {
+  align-items: center;
+  background: transparent;
+  border-radius: 7px;
+  color: var(--color-text-soft);
+  display: flex;
+  flex: 0 0 auto;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+
+.canvas-node-open:hover {
+  background: var(--color-bg-muted);
+  color: var(--color-text);
+}
+
+.canvas-note-body {
+  background: transparent;
+  border: 0;
+  color: var(--color-text);
+  flex: 1;
+  margin: 0;
+  min-height: 0;
+  outline: none;
+  width: 100%;
+}
+
+.canvas-note-body {
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 4px 2px 0;
+  resize: none;
+}
+
+.canvas-note-body::placeholder {
+  color: var(--color-text-soft);
+}
+
+.canvas-note-menu {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  box-shadow: 0 16px 36px rgb(28 25 23 / 0.14);
+  padding: 6px;
+  position: absolute;
+  right: 10px;
+  top: 42px;
+  z-index: 4;
+}
+
+.canvas-note-menu-item {
+  align-items: center;
+  background: transparent;
+  border-radius: 7px;
+  color: var(--color-text);
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.canvas-note-menu-item:hover {
+  background: var(--color-bg-muted);
+}
+
 .canvas-history {
   align-items: center;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  bottom: 18px;
   box-shadow: 0 8px 24px rgb(28 25 23 / 0.08);
   display: inline-flex;
   gap: 2px;
   padding: 4px;
   position: absolute;
-  right: 18px;
+  right: 102px;
+  top: 18px;
   z-index: 30;
 }
 
@@ -524,36 +709,80 @@ a {
   width: 30px;
 }
 
-.history-button:hover {
+.history-button:hover:not(:disabled) {
   background: var(--color-bg-muted);
 }
 
-/* Floating flow nodes */
-.flow-node {
-  display: grid;
-  gap: 6px;
+.history-button:disabled {
+  color: var(--color-text-soft);
+  cursor: default;
+  opacity: 0.45;
 }
 
-.flow-node strong {
-  color: var(--color-text);
-  font-size: 13px;
-  line-height: 1.25;
+.react-flow__node-tischNode {
+  background: transparent;
+  border: 0;
+  border-radius: 22px;
+  box-shadow: none;
+  overflow: visible;
 }
 
-.flow-node span {
-  color: var(--color-text-muted);
-  display: -webkit-box;
-  font-size: 12px;
-  line-height: 1.35;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+.react-flow__node-tischNode:focus,
+.react-flow__node-tischNode:focus-visible,
+.react-flow__node-tischNode.selected,
+.react-flow__node-tischNode.selectable:focus,
+.react-flow__node-tischNode.selectable:focus-visible,
+.react-flow__node-tischNode.selectable.selected {
+  box-shadow: none;
+  outline: none;
 }
 
-.node-image-placeholder {
-  background: var(--color-bg-muted);
-  border-radius: 6px;
-  height: 86px;
+/* Edges — slim, themed, with hover/selected highlight */
+.canvas-view .react-flow__edge-path,
+.canvas-view .react-flow__connection-path {
+  stroke: color-mix(in srgb, var(--color-border-strong) 60%, transparent);
+  stroke-width: 1.6;
+}
+
+.canvas-view .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--color-text);
+  stroke-width: 2;
+}
+
+.canvas-view .react-flow__edge.selected .react-flow__edge-path,
+.canvas-view .react-flow__edge:focus .react-flow__edge-path,
+.canvas-view .react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--color-text);
+  stroke-width: 2;
+}
+
+.canvas-view .react-flow__edge .react-flow__edge-interaction {
+  stroke-width: 18;
+}
+
+.canvas-view .react-flow__arrowhead {
+  fill: color-mix(in srgb, var(--color-border-strong) 60%, transparent);
+}
+
+.canvas-view .react-flow__edge.selected .react-flow__arrowhead,
+.canvas-view .react-flow__edge:hover .react-flow__arrowhead {
+  fill: var(--color-text);
+}
+
+/* NodeResizer — match note border, ditch the default blue */
+.canvas-view .react-flow__resize-control.line,
+.canvas-view .react-flow__resize-control.line.canvas-node-resize-line {
+  border-color: color-mix(in srgb, var(--color-border-strong) 45%, transparent);
+  border-width: 1px;
+}
+
+.canvas-view .react-flow__resize-control.handle,
+.canvas-view .react-flow__resize-control.handle.canvas-node-resize-handle {
+  background: var(--color-bg);
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: 3px;
+  height: 8px;
+  width: 8px;
 }
 
 /* ------------------------------------------------------------------ */
@@ -575,22 +804,15 @@ a {
   padding: 12px 28px;
 }
 
-.title-input {
-  background: transparent;
-  border: 0;
-  border-radius: 7px;
+.page-title {
   color: var(--color-text);
   flex: 1;
   font-size: 20px;
   font-weight: 650;
-  height: 40px;
+  line-height: 1.2;
+  margin: 0;
   min-width: 0;
-  outline: none;
   padding: 0 10px;
-}
-
-.title-input:focus {
-  background: var(--color-bg-muted);
 }
 
 .page-actions {
@@ -618,25 +840,6 @@ a {
 .icon-button:hover {
   background: var(--color-bg-muted);
   color: var(--color-text);
-}
-
-.save-pill {
-  align-items: center;
-  background: color-mix(in srgb, var(--color-green) 9%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-green) 22%, transparent);
-  border-radius: 999px;
-  color: var(--color-green);
-  display: inline-flex;
-  font-size: 12px;
-  gap: 6px;
-  height: 28px;
-  padding: 0 11px;
-}
-
-.save-pill.is-idle {
-  background: var(--color-bg-muted);
-  border-color: var(--color-border);
-  color: var(--color-text-muted);
 }
 
 /* ------------------------------------------------------------------ */
@@ -988,6 +1191,11 @@ a {
   background: var(--color-bg-emphasis);
 }
 
+.danger,
+.danger:hover {
+  color: var(--color-danger);
+}
+
 .board-toolbar label {
   align-items: center;
   color: var(--color-text-muted);
@@ -1200,6 +1408,54 @@ a {
 .inspector-card {
   display: grid;
   gap: 12px;
+}
+
+.inspector-card + .inspector-card {
+  border-top: 1px solid var(--color-border);
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.settings-row {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-label {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.segmented {
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  display: inline-flex;
+  padding: 3px;
+}
+
+.segmented-option {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex: 1;
+  font-size: 12px;
+  height: 28px;
+  padding: 0 12px;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.segmented-option:hover {
+  color: var(--color-text);
+}
+
+.segmented-option.is-active {
+  background: var(--color-bg);
+  box-shadow: 0 1px 2px rgb(28 25 23 / 0.08);
+  color: var(--color-text);
 }
 
 .inspector-card .eyebrow {
