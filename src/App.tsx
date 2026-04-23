@@ -2493,8 +2493,8 @@ function getSettingsCopy(language: AppLanguage) {
       cliAccessDescription:
         'Use this command from Codex or a terminal to verify access.',
       skillAccess: 'Codex skill',
-      skillAccessDescription:
-        'The repo includes a reusable skill with Tisch workflow standards.',
+    skillAccessDescription:
+        'Install the reusable Tisch skill locally in Codex.',
     }
   }
 
@@ -2535,7 +2535,7 @@ function getSettingsCopy(language: AppLanguage) {
       'Nutze diesen Befehl in Codex oder im Terminal, um den Zugriff zu pruefen.',
     skillAccess: 'Codex-Skill',
     skillAccessDescription:
-      'Das Repository enthaelt einen wiederverwendbaren Skill mit Tisch-Workflow-Standards.',
+      'Installiere den wiederverwendbaren Tisch-Skill lokal in Codex.',
   }
 }
 
@@ -2763,7 +2763,9 @@ function SettingsView({
                 title={copy.skillAccess}
                 description={copy.skillAccessDescription}
               >
-                <code className="settings-code-line">skills/tisch</code>
+                <code className="settings-code-line">
+                  ~/.codex/skills/tisch
+                </code>
               </SettingGroup>
             </div>
           )}

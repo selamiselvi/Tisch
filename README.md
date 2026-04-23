@@ -102,9 +102,10 @@ Standardpfad; `PLANNER_WORKSPACE_DIR` bleibt fuer Entwicklung kompatibel.
 
 ### Codex Skill
 
-Ein erster wiederverwendbarer Codex-Skill liegt unter `skills/tisch`. Der Skill
-weist Agenten an, Tisch ueber das CLI zu bedienen und definiert Standards fuer
-Skripte, Short-form-Canvas-Strukturen, B-Roll-Nodes und Verbindungen.
+Der wiederverwendbare Codex-Skill ist kein Teil dieses App-Repositories. Lokal
+kann er als `tisch`-Skill unter `~/.codex/skills/tisch` installiert werden. Der
+Skill weist Agenten an, Tisch ueber das CLI zu bedienen und definiert Standards
+fuer Skripte, Short-form-Canvas-Strukturen, B-Roll-Nodes und Verbindungen.
 
 ## Datenmodell
 
