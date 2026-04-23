@@ -32,17 +32,21 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  LayoutGrid,
   Minus,
   Plus,
   RefreshCw,
   Trash2,
+  X,
 } from 'lucide-react'
 import {
   MarkdownEditor,
   type MarkdownMode,
 } from './components/editor/MarkdownEditor'
 import brandMarkUrl from './assets/tisch-mark.svg'
+import boardSectionUrl from './assets/board-section.svg'
+import canvasSectionUrl from './assets/canvas-section.svg'
+import projectSectionUrl from './assets/project-section.svg'
+import scriptSectionUrl from './assets/script-section.svg'
 import {
   getWorkspacePath,
   loadPlanner,
@@ -71,9 +75,15 @@ type SidebarMenuState = {
   x: number
   y: number
 }
+type SidebarIconComponent = React.ComponentType<{
+  className?: string
+  size?: number
+  'aria-hidden'?: boolean
+}>
 
 type CanvasFlowNodeData = {
   itemId: string
+  title: string
   content: string
   autoFocusBody: boolean
   onUpdateContent: (itemId: string, content: string) => void
@@ -93,6 +103,66 @@ const slugify = (value: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
+
+function normalizeLineEndings(value: string) {
+  return value.replace(/\r\n?/g, '\n')
+}
+
+function buildItemContentPath(projectId: string, title: string, itemId: string) {
+  const slug =
+    slugify(
+      `${projectId || 'projekt'}-${title || 'ohne-titel'}-${itemId.slice(-4)}`,
+    ) || `item-${itemId.slice(-4)}`
+  return `pages/${slug}.md`
+}
+
+function splitItemContent(content: string) {
+  const normalized = normalizeLineEndings(content)
+  if (!normalized.trim()) {
+    return { title: '', body: '' }
+  }
+
+  const lines = normalized.split('\n')
+  const firstMeaningfulIndex = lines.findIndex((line) => line.trim())
+  if (firstMeaningfulIndex === -1) {
+    return { title: '', body: '' }
+  }
+
+  const firstMeaningfulLine = lines[firstMeaningfulIndex].trim()
+  const title = firstMeaningfulLine.replace(/^#{1,6}\s+/, '').trim()
+
+  let bodyLines = lines.slice(firstMeaningfulIndex + 1)
+  if (/^#{1,6}\s+/.test(firstMeaningfulLine) && bodyLines[0]?.trim() === '') {
+    bodyLines = bodyLines.slice(1)
+  }
+
+  return {
+    title,
+    body: bodyLines.join('\n'),
+  }
+}
+
+function composeItemContent(title: string, body: string) {
+  const nextTitle = title.trim()
+  const nextBody = normalizeLineEndings(body).replace(/^\n+/, '')
+
+  if (!nextTitle) {
+    return nextBody
+  }
+
+  return nextBody ? `# ${nextTitle}\n\n${nextBody}` : `# ${nextTitle}`
+}
+
+function deriveItemFieldsFromContent(item: Item, content: string) {
+  const { title, body } = splitItemContent(content)
+  const nextTitle = title.slice(0, 120) || item.title || 'Ohne Titel'
+  return {
+    title: nextTitle,
+    content,
+    summary: deriveSummary(body, ''),
+    contentPath: buildItemContentPath(item.projectId, nextTitle, item.id),
+  }
+}
 
 function removeItemFromPlanner(planner: PlannerData, itemId: string) {
   return {
@@ -123,6 +193,162 @@ function removeItemFromPlanner(planner: PlannerData, itemId: string) {
   }
 }
 
+function BoardSidebarIcon({
+  className,
+  size = 28,
+}: {
+  className?: string
+  size?: number
+  'aria-hidden'?: boolean
+}) {
+  return (
+    <img
+      alt=""
+      aria-hidden
+      className={className}
+      height={size}
+      src={boardSectionUrl}
+      width={size}
+    />
+  )
+}
+
+function CanvasSidebarIcon({
+  className,
+  size = 28,
+}: {
+  className?: string
+  size?: number
+  'aria-hidden'?: boolean
+}) {
+  return (
+    <img
+      alt=""
+      aria-hidden
+      className={className}
+      height={size}
+      src={canvasSectionUrl}
+      width={size}
+    />
+  )
+}
+
+function ScriptSidebarIcon({
+  className,
+  size = 28,
+}: {
+  className?: string
+  size?: number
+  'aria-hidden'?: boolean
+}) {
+  return (
+    <img
+      alt=""
+      aria-hidden
+      className={className}
+      height={size}
+      src={scriptSectionUrl}
+      width={size}
+    />
+  )
+}
+
+function ProjectSidebarIcon({
+  className,
+  size = 28,
+}: {
+  className?: string
+  size?: number
+  'aria-hidden'?: boolean
+}) {
+  return (
+    <img
+      alt=""
+      aria-hidden
+      className={className}
+      height={size}
+      src={projectSectionUrl}
+      width={size}
+    />
+  )
+}
+
+function moveBoardCard(
+  board: Board,
+  cardId: string,
+  columnId: string,
+  beforeCardId: string | null,
+) {
+  const card = board.cards.find((entry) => entry.id === cardId)
+  if (!card || !board.columns.some((column) => column.id === columnId)) {
+    return board
+  }
+
+  if (beforeCardId === cardId) {
+    return board
+  }
+
+  const remainingCards = board.cards.filter((entry) => entry.id !== cardId)
+  const targetCards = remainingCards.filter((entry) => entry.columnId === columnId)
+  const normalizedBeforeCardId =
+    beforeCardId && targetCards.some((entry) => entry.id === beforeCardId)
+      ? beforeCardId
+      : null
+
+  const nextCard = { ...card, columnId }
+  let insertIndex = remainingCards.length
+
+  if (normalizedBeforeCardId) {
+    insertIndex = remainingCards.findIndex(
+      (entry) => entry.id === normalizedBeforeCardId,
+    )
+  } else {
+    let lastTargetIndex = -1
+    remainingCards.forEach((entry, index) => {
+      if (entry.columnId === columnId) {
+        lastTargetIndex = index
+      }
+    })
+    insertIndex = lastTargetIndex === -1 ? remainingCards.length : lastTargetIndex + 1
+  }
+
+  const nextCards = [...remainingCards]
+  nextCards.splice(insertIndex, 0, nextCard)
+
+  const unchanged =
+    board.cards.length === nextCards.length &&
+    board.cards.every(
+      (entry, index) =>
+        entry.id === nextCards[index]?.id &&
+        entry.itemId === nextCards[index]?.itemId &&
+        entry.columnId === nextCards[index]?.columnId,
+    )
+
+  if (unchanged) {
+    return board
+  }
+
+  return { ...board, cards: nextCards }
+}
+
+function updateItemStatus(
+  items: Item[],
+  itemId: string,
+  status: string,
+) {
+  const now = new Date().toISOString()
+  let changed = false
+  const nextItems = items.map((item) => {
+    if (item.id !== itemId || item.status === status) {
+      return item
+    }
+    changed = true
+    return { ...item, status, updatedAt: now }
+  })
+
+  return changed ? nextItems : items
+}
+
 function App() {
   const [data, setData] = useState<PlannerData | null>(null)
   const [workspacePath, setWorkspacePath] = useState('')
@@ -138,7 +364,6 @@ function App() {
   const [pageMode, setPageMode] = useState<PageMode>('write')
   const [rightOpen, setRightOpen] = useState(false)
   const [canvasEdgeStyle, setCanvasEdgeStyle] = useState<CanvasEdgeStyle>('bezier')
-  const [draggedCardId, setDraggedCardId] = useState<string | null>(null)
   const [hideDone, setHideDone] = useState(false)
   const [sidebarMenu, setSidebarMenu] = useState<SidebarMenuState | null>(null)
   const [pendingCanvasFocusItemId, setPendingCanvasFocusItemId] = useState<
@@ -146,11 +371,14 @@ function App() {
   >(null)
   const [canvasUndoStack, setCanvasUndoStack] = useState<PlannerData[]>([])
   const [canvasRedoStack, setCanvasRedoStack] = useState<PlannerData[]>([])
+  const dataRef = useRef<PlannerData | null>(null)
+  const saveVersion = useRef(0)
   const saveTimer = useRef<number | null>(null)
 
   useEffect(() => {
     void Promise.all([loadPlanner(), getWorkspacePath()]).then(
       ([planner, path]) => {
+        dataRef.current = planner
         setData(planner)
         setWorkspacePath(path)
         const firstProject = planner.projects[0]
@@ -186,6 +414,21 @@ function App() {
       window.removeEventListener('scroll', closeMenu, true)
     }
   }, [sidebarMenu])
+
+  useEffect(() => {
+    if (!rightOpen) {
+      return
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setRightOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [rightOpen])
 
   const activeProject = data?.projects.find(
     (project) => project.id === activeProjectId,
@@ -228,17 +471,35 @@ function App() {
     ) ?? []
 
   function commit(
-    next: PlannerData,
+    nextOrUpdater: PlannerData | ((current: PlannerData) => PlannerData),
     options: { delayMs?: number } = {},
   ) {
+    const current = dataRef.current
+    const next =
+      typeof nextOrUpdater === 'function'
+        ? current
+          ? nextOrUpdater(current)
+          : null
+        : nextOrUpdater
+
+    if (!next) {
+      return
+    }
+
+    dataRef.current = next
     setData(next)
 
     if (saveTimer.current) {
       window.clearTimeout(saveTimer.current)
     }
 
+    const version = ++saveVersion.current
     saveTimer.current = window.setTimeout(() => {
       void savePlanner(next).then((saved) => {
+        if (saveVersion.current !== version) {
+          return
+        }
+        dataRef.current = saved
         setData(saved)
       })
     }, options.delayMs ?? 160)
@@ -259,8 +520,14 @@ function App() {
   }
 
   function restoreCanvasSnapshot(snapshot: PlannerData) {
+    const version = ++saveVersion.current
+    dataRef.current = snapshot
     setData(snapshot)
     void savePlanner(snapshot).then((saved) => {
+      if (saveVersion.current !== version) {
+        return
+      }
+      dataRef.current = saved
       setData(saved)
     })
   }
@@ -288,31 +555,31 @@ function App() {
   }
 
   function updateItem(itemId: string, updater: (item: Item) => Item) {
-    if (!data) {
+    if (!dataRef.current) {
       return
     }
 
-    commit({
-      ...data,
-      items: data.items.map((item) =>
+    commit((current) => ({
+      ...current,
+      items: current.items.map((item) =>
         item.id === itemId
           ? { ...updater(item), updatedAt: new Date().toISOString() }
           : item,
       ),
-    })
+    }))
   }
 
   function updateBoard(boardId: string, updater: (board: Board) => Board) {
-    if (!data) {
+    if (!dataRef.current) {
       return
     }
 
-    commit({
-      ...data,
-      boards: data.boards.map((board) =>
+    commit((current) => ({
+      ...current,
+      boards: current.boards.map((board) =>
         board.id === boardId ? updater(board) : board,
       ),
-    })
+    }))
   }
 
   function updateCanvas(
@@ -629,8 +896,8 @@ function App() {
       projectId: activeProjectId ?? '',
       title,
       summary: '',
-      contentPath: `pages/${slugify(`${activeProjectId}-${title}-${nanoid(4)}`)}.md`,
-      content: `# ${title}\n\n`,
+      contentPath: buildItemContentPath(activeProjectId ?? '', title, id),
+      content: composeItemContent(title, ''),
       tags: [],
       kind: 'script',
       status: 'planung',
@@ -657,7 +924,16 @@ function App() {
       return
     }
 
-    updateItem(itemId, (item) => ({ ...item, title: nextTitle }))
+    updateItem(itemId, (item) => {
+      const { body } = splitItemContent(item.content)
+      return {
+        ...item,
+        title: nextTitle,
+        content: composeItemContent(nextTitle, body),
+        contentPath: buildItemContentPath(item.projectId, nextTitle, item.id),
+        summary: deriveSummary(body, ''),
+      }
+    })
   }
 
   function deleteItem(itemId: string) {
@@ -738,24 +1014,42 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [activeCanvas, activeItemId, data, view])
 
-  function moveCard(columnId: string) {
-    if (!activeBoard || !draggedCardId) {
+  function moveCard(
+    cardId: string,
+    columnId: string,
+    beforeCardId: string | null,
+  ) {
+    if (!activeBoard) {
       return
     }
 
-    const card = activeBoard.cards.find((entry) => entry.id === draggedCardId)
-    updateBoard(activeBoard.id, (board) => ({
-      ...board,
-      cards: board.cards.map((entry) =>
-        entry.id === draggedCardId ? { ...entry, columnId } : entry,
-      ),
-    }))
+    commit((current) => {
+      const board = current.boards.find((entry) => entry.id === activeBoard.id)
+      if (!board) {
+        return current
+      }
 
-    if (card) {
-      updateItem(card.itemId, (item) => ({ ...item, status: columnId }))
-    }
+      const card = board.cards.find((entry) => entry.id === cardId)
+      if (!card) {
+        return current
+      }
 
-    setDraggedCardId(null)
+      const nextBoard = moveBoardCard(board, cardId, columnId, beforeCardId)
+      if (nextBoard === board) {
+        return current
+      }
+
+      return {
+        ...current,
+        boards: current.boards.map((entry) =>
+          entry.id === board.id ? nextBoard : entry,
+        ),
+        items:
+          card.columnId === columnId
+            ? current.items
+            : updateItemStatus(current.items, card.itemId, columnId),
+      }
+    })
   }
 
   function addColumn() {
@@ -790,18 +1084,44 @@ function App() {
       return
     }
 
-    const fallbackColumn = activeBoard.columns.find(
-      (column) => column.id !== columnId,
-    )
-    updateBoard(activeBoard.id, (board) => ({
-      ...board,
-      columns: board.columns.filter((column) => column.id !== columnId),
-      cards: board.cards.map((card) =>
-        card.columnId === columnId
-          ? { ...card, columnId: fallbackColumn?.id ?? board.columns[0].id }
-          : card,
-      ),
-    }))
+    commit((current) => {
+      const board = current.boards.find((entry) => entry.id === activeBoard.id)
+      if (!board || board.columns.length < 2) {
+        return current
+      }
+
+      const fallbackColumn = board.columns.find((column) => column.id !== columnId)
+      if (!fallbackColumn) {
+        return current
+      }
+
+      const movedItemIds = board.cards
+        .filter((card) => card.columnId === columnId)
+        .map((card) => card.itemId)
+
+      let nextItems = current.items
+      movedItemIds.forEach((itemId) => {
+        nextItems = updateItemStatus(nextItems, itemId, fallbackColumn.id)
+      })
+
+      return {
+        ...current,
+        boards: current.boards.map((entry) =>
+          entry.id === board.id
+            ? {
+                ...entry,
+                columns: entry.columns.filter((column) => column.id !== columnId),
+                cards: entry.cards.map((card) =>
+                  card.columnId === columnId
+                    ? { ...card, columnId: fallbackColumn.id }
+                    : card,
+                ),
+              }
+            : entry,
+        ),
+        items: nextItems,
+      }
+    })
   }
 
   /** Add a board card that references an existing item. */
@@ -809,38 +1129,59 @@ function App() {
     if (!activeBoard) {
       return
     }
-    if (activeBoard.cards.some((card) => card.itemId === itemId)) {
-      return
-    }
-    updateBoard(activeBoard.id, (board) => ({
-      ...board,
-      cards: [
-        ...board.cards,
-        { id: `card-${nanoid(8)}`, itemId, columnId },
-      ],
-    }))
+
+    commit((current) => {
+      const board = current.boards.find((entry) => entry.id === activeBoard.id)
+      if (!board || board.cards.some((card) => card.itemId === itemId)) {
+        return current
+      }
+
+      return {
+        ...current,
+        boards: current.boards.map((entry) =>
+          entry.id === board.id
+            ? {
+                ...entry,
+                cards: [
+                  ...entry.cards,
+                  { id: `card-${nanoid(8)}`, itemId, columnId },
+                ],
+              }
+            : entry,
+        ),
+        items: updateItemStatus(current.items, itemId, columnId),
+      }
+    })
   }
 
   /** Create a brand new script item and add it as a board card. */
   function addBoardCardAsNewScript(columnId: string, title: string) {
-    if (!data || !activeBoard) {
+    if (!activeBoard) {
       return
     }
-    const item = buildItem(title)
-    commit({
-      ...data,
-      items: [item, ...data.items],
-      boards: data.boards.map((board) =>
-        board.id === activeBoard.id
-          ? {
-              ...board,
-              cards: [
-                ...board.cards,
-                { id: `card-${nanoid(8)}`, itemId: item.id, columnId },
-              ],
-            }
-          : board,
-      ),
+
+    commit((current) => {
+      const board = current.boards.find((entry) => entry.id === activeBoard.id)
+      if (!board) {
+        return current
+      }
+
+      const item = { ...buildItem(title), status: columnId }
+      return {
+        ...current,
+        items: [item, ...current.items],
+        boards: current.boards.map((entry) =>
+          entry.id === board.id
+            ? {
+                ...entry,
+                cards: [
+                  ...entry.cards,
+                  { id: `card-${nanoid(8)}`, itemId: item.id, columnId },
+                ],
+              }
+            : entry,
+        ),
+      }
     })
   }
 
@@ -880,7 +1221,7 @@ function App() {
 
     const item = {
       ...buildItem(options.title ?? 'Ohne Titel'),
-      content: '',
+      content: options.title ? composeItemContent(options.title, '') : '',
       summary: '',
     }
     const position = options.position ?? {
@@ -941,9 +1282,14 @@ function App() {
   function updateCanvasItemContent(itemId: string, content: string) {
     updateItem(itemId, (item) => ({
       ...item,
-      title: deriveCanvasTitle(content),
-      content,
-      summary: deriveCanvasSummary(content, item.summary),
+      ...deriveItemFieldsFromContent(item, content),
+    }))
+  }
+
+  function updateBoardItemContent(itemId: string, content: string) {
+    updateItem(itemId, (item) => ({
+      ...item,
+      ...deriveItemFieldsFromContent(item, content),
     }))
   }
 
@@ -1096,57 +1442,62 @@ function App() {
       <div className="titlebar-drag" />
 
       <aside className="sidebar">
-        <div className="sidebar-scroll">
+        <div className="sidebar-brand-shell">
           <div className="sidebar-brand">
             <span className="brand-mark" aria-hidden>
               <img className="brand-icon" src={brandMarkUrl} alt="" />
             </span>
             <strong>Tisch</strong>
           </div>
+        </div>
 
-          <section className="sidebar-section">
-            <div className="sidebar-heading">Projekte</div>
-            <nav className="project-list" aria-label="Projekte">
-              {data.projects.map((project) => {
-                const isActive = project.id === activeProjectId
-                return (
-                  <SidebarEditableRow
-                    active={isActive}
-                    className="project-row"
-                    key={project.id}
-                    label={project.name}
-                    labelClassName="project-name"
-                    leading={<span className="project-dot" aria-hidden />}
-                    onClick={() => switchProject(project.id)}
-                    onContextMenu={(event) =>
-                      openSidebarMenu(event, {
-                        kind: 'project',
-                        id: project.id,
-                      })
-                    }
-                    onRename={(value) => renameProject(project.id, value)}
-                    trailing={
-                      isActive ? (
-                        <RefreshCw
-                          className="project-sync"
-                          size={12}
-                          aria-hidden
-                        />
-                      ) : null
-                    }
-                    style={
-                      {
-                        '--project-accent': project.accent,
-                      } as React.CSSProperties
-                    }
-                  />
-                )
-              })}
-              <button className="project-row add-row" onClick={addProject}>
-                <Plus size={14} aria-hidden />
-                <span>Neues Projekt</span>
-              </button>
-            </nav>
+        <div className="sidebar-body">
+          <section className="sidebar-section sidebar-projects">
+            <div className="sidebar-heading sidebar-heading-with-icon">
+              <ProjectSidebarIcon
+                className="sidebar-heading-icon"
+                size={28}
+                aria-hidden
+              />
+              <span>Projekte</span>
+            </div>
+            <div className="sidebar-section-scroll">
+              <nav className="project-list" aria-label="Projekte">
+                {data.projects.map((project) => {
+                  const isActive = project.id === activeProjectId
+                  return (
+                    <SidebarEditableRow
+                      active={isActive}
+                      className="project-row"
+                      key={project.id}
+                      label={project.name}
+                      labelClassName="project-name"
+                      onClick={() => switchProject(project.id)}
+                      onContextMenu={(event) =>
+                        openSidebarMenu(event, {
+                          kind: 'project',
+                          id: project.id,
+                        })
+                      }
+                      onRename={(value) => renameProject(project.id, value)}
+                      trailing={
+                        isActive ? (
+                          <RefreshCw
+                            className="project-sync"
+                            size={12}
+                            aria-hidden
+                          />
+                        ) : null
+                      }
+                    />
+                  )
+                })}
+                <button className="project-row add-row" onClick={addProject}>
+                  <Plus size={14} aria-hidden />
+                  <span>Neues Projekt</span>
+                </button>
+              </nav>
+            </div>
           </section>
 
           {activeProject && (
@@ -1167,75 +1518,77 @@ function App() {
               </div>
 
               {projectDetailOpen && (
-                <div className="category-list">
-                  <CategorySection
-                    id="canvas"
-                    label="Canvas"
-                    icon={LayoutGrid}
-                    expanded={expandedCategories.canvas}
-                    onToggle={() => toggleCategory('canvas')}
-                    onAdd={addCanvas}
-                    addLabel="Neues Canvas"
-                    emptyHint="Noch kein Canvas."
-                    entries={projectCanvases.map((canvas) => ({
-                      id: canvas.id,
-                      label: canvas.title,
-                      active: view === 'canvas' && canvas.id === activeCanvas?.id,
-                      onClick: () => openCanvas(canvas.id),
-                      onRename: (value: string) => renameCanvas(canvas.id, value),
-                      onContextMenu: (event: React.MouseEvent) =>
-                        openSidebarMenu(event, {
-                          kind: 'canvas',
-                          id: canvas.id,
-                        }),
-                    }))}
-                  />
+                <div className="sidebar-section-scroll project-detail-scroll">
+                  <div className="category-list">
+                    <CategorySection
+                      id="canvas"
+                      label="Canvas"
+                      icon={CanvasSidebarIcon}
+                      expanded={expandedCategories.canvas}
+                      onToggle={() => toggleCategory('canvas')}
+                      onAdd={addCanvas}
+                      addLabel="Neues Canvas"
+                      emptyHint="Noch kein Canvas."
+                      entries={projectCanvases.map((canvas) => ({
+                        id: canvas.id,
+                        label: canvas.title,
+                        active: view === 'canvas' && canvas.id === activeCanvas?.id,
+                        onClick: () => openCanvas(canvas.id),
+                        onRename: (value: string) => renameCanvas(canvas.id, value),
+                        onContextMenu: (event: React.MouseEvent) =>
+                          openSidebarMenu(event, {
+                            kind: 'canvas',
+                            id: canvas.id,
+                          }),
+                      }))}
+                    />
 
-                  <CategorySection
-                    id="board"
-                    label="Ideen Board"
-                    icon={LayoutGrid}
-                    expanded={expandedCategories.board}
-                    onToggle={() => toggleCategory('board')}
-                    onAdd={addBoard}
-                    addLabel="Neues Board"
-                    emptyHint="Noch kein Board."
-                    entries={projectBoards.map((board) => ({
-                      id: board.id,
-                      label: board.title,
-                      active: view === 'board' && board.id === activeBoard?.id,
-                      onClick: () => openBoard(board.id),
-                      onRename: (value: string) => renameBoard(board.id, value),
-                      onContextMenu: (event: React.MouseEvent) =>
-                        openSidebarMenu(event, {
-                          kind: 'board',
-                          id: board.id,
-                        }),
-                    }))}
-                  />
+                    <CategorySection
+                      id="board"
+                      label="Ideen Board"
+                      icon={BoardSidebarIcon}
+                      expanded={expandedCategories.board}
+                      onToggle={() => toggleCategory('board')}
+                      onAdd={addBoard}
+                      addLabel="Neues Board"
+                      emptyHint="Noch kein Board."
+                      entries={projectBoards.map((board) => ({
+                        id: board.id,
+                        label: board.title,
+                        active: view === 'board' && board.id === activeBoard?.id,
+                        onClick: () => openBoard(board.id),
+                        onRename: (value: string) => renameBoard(board.id, value),
+                        onContextMenu: (event: React.MouseEvent) =>
+                          openSidebarMenu(event, {
+                            kind: 'board',
+                            id: board.id,
+                          }),
+                      }))}
+                    />
 
-                  <CategorySection
-                    id="skripte"
-                    label="Skripte"
-                    icon={FileText}
-                    expanded={expandedCategories.skripte}
-                    onToggle={() => toggleCategory('skripte')}
-                    onAdd={addScript}
-                    addLabel="Neues Skript"
-                    emptyHint="Noch keine Skripte."
-                    entries={projectScripts.map((item) => ({
-                      id: item.id,
-                      label: item.title,
-                      active: view === 'page' && item.id === activeItem?.id,
-                      onClick: () => openScript(item.id),
-                      onRename: (value: string) => renameItem(item.id, value),
-                      onContextMenu: (event: React.MouseEvent) =>
-                        openSidebarMenu(event, {
-                          kind: 'script',
-                          id: item.id,
-                        }),
-                    }))}
-                  />
+                    <CategorySection
+                      id="skripte"
+                      label="Skripte"
+                      icon={ScriptSidebarIcon}
+                      expanded={expandedCategories.skripte}
+                      onToggle={() => toggleCategory('skripte')}
+                      onAdd={addScript}
+                      addLabel="Neues Skript"
+                      emptyHint="Noch keine Skripte."
+                      entries={projectScripts.map((item) => ({
+                        id: item.id,
+                        label: item.title,
+                        active: view === 'page' && item.id === activeItem?.id,
+                        onClick: () => openScript(item.id),
+                        onRename: (value: string) => renameItem(item.id, value),
+                        onContextMenu: (event: React.MouseEvent) =>
+                          openSidebarMenu(event, {
+                            kind: 'script',
+                            id: item.id,
+                          }),
+                      }))}
+                    />
+                  </div>
                 </div>
               )}
             </section>
@@ -1259,7 +1612,7 @@ function App() {
             pageMode={pageMode}
             onModeChange={setPageMode}
             onUpdate={(item) => updateItem(item.id, () => item)}
-            onToggleInspector={() => setRightOpen(!rightOpen)}
+            onToggleInspector={() => setRightOpen((open) => !open)}
           />
         )}
 
@@ -1299,7 +1652,7 @@ function App() {
               onCanvasItemFocusHandled={markCanvasItemFocusHandled}
               projectItems={projectItemsForSearch}
               inspectorOpen={rightOpen}
-              onToggleInspector={() => setRightOpen(!rightOpen)}
+              onToggleInspector={() => setRightOpen((open) => !open)}
               edgeStyle={canvasEdgeStyle}
             />
           </ReactFlowProvider>
@@ -1321,9 +1674,17 @@ function App() {
             projectItems={projectItemsForSearch}
             hideDone={hideDone}
             selectedItemId={activeItem?.id ?? null}
-            onSelectItem={openScript}
-            onDragStart={setDraggedCardId}
-            onDropColumn={moveCard}
+            onSelectItem={setActiveItemId}
+            inspectorOpen={rightOpen}
+            onToggleInspector={() => setRightOpen((open) => !open)}
+            onCloseInspector={() => setRightOpen(false)}
+            onOpenItem={openNodeAsScript}
+            onOpenInspectorItem={(itemId) => {
+              setActiveItemId(itemId)
+              setRightOpen(true)
+            }}
+            onUpdateItemContent={updateBoardItemContent}
+            onMoveCard={moveCard}
             onAddColumn={addColumn}
             onRenameColumn={renameColumn}
             onDeleteColumn={deleteColumn}
@@ -1332,7 +1693,7 @@ function App() {
             onToggleDone={(itemId) =>
               updateItem(itemId, (item) => ({ ...item, done: !item.done }))
             }
-            onToggleHideDone={() => setHideDone(!hideDone)}
+            onToggleHideDone={() => setHideDone((hidden) => !hidden)}
           />
         )}
 
@@ -1348,20 +1709,32 @@ function App() {
 
       {rightOpen && activeProject && (
         <aside className="right-pane">
-          {view === 'canvas' && (
-            <CanvasSettings
-              edgeStyle={canvasEdgeStyle}
-              onEdgeStyleChange={setCanvasEdgeStyle}
+          <div className="right-pane-header">
+            <span className="right-pane-title">Inspector</span>
+            <button
+              className="right-pane-close"
+              onClick={() => setRightOpen(false)}
+              title="Inspector schließen"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="right-pane-content">
+            {view === 'canvas' && (
+              <CanvasSettings
+                edgeStyle={canvasEdgeStyle}
+                onEdgeStyleChange={setCanvasEdgeStyle}
+              />
+            )}
+            <Inspector
+              item={activeItem}
+              view={view}
+              links={relatedLinks}
+              items={data.items}
+              board={activeBoard}
+              canvas={activeCanvas}
             />
-          )}
-          <Inspector
-            item={activeItem}
-            view={view}
-            links={relatedLinks}
-            items={data.items}
-            board={activeBoard}
-            canvas={activeCanvas}
-          />
+          </div>
         </aside>
       )}
 
@@ -1486,7 +1859,7 @@ function CategorySection({
 }: {
   id: CategoryId
   label: string
-  icon: typeof LayoutGrid
+  icon: SidebarIconComponent
   expanded: boolean
   entries: {
     id: string
@@ -1509,7 +1882,7 @@ function CategorySection({
         onClick={onToggle}
       >
         <Chevron className="category-chevron" size={13} aria-hidden />
-        <Icon className="category-icon" size={14} aria-hidden />
+        <Icon className="category-icon" size={28} aria-hidden />
         <span>{label}</span>
       </button>
 
@@ -1524,7 +1897,6 @@ function CategorySection({
               className="page-row"
               key={entry.id}
               label={entry.label}
-              leading={<FileText size={13} aria-hidden />}
               onClick={entry.onClick}
               onContextMenu={entry.onContextMenu}
               onRename={entry.onRename}
@@ -1589,8 +1961,7 @@ function PageView({
   function updateContent(content: string) {
     onUpdate({
       ...item,
-      content,
-      summary: deriveSummary(content, item.summary),
+      ...deriveItemFieldsFromContent(item, content),
     })
   }
 
@@ -1636,16 +2007,6 @@ function deriveSummary(markdown: string, fallback: string) {
       .find(Boolean)
       ?.slice(0, 160) ?? fallback
   )
-}
-
-function deriveCanvasTitle(content: string) {
-  const firstLine = content.split('\n').find((line) => line.trim())
-  return firstLine?.trim().slice(0, 120) || 'Ohne Titel'
-}
-
-function deriveCanvasSummary(content: string, fallback: string) {
-  const [, ...restLines] = content.split('\n')
-  return deriveSummary(restLines.join('\n'), fallback)
 }
 
 function resolveImageUrl(
@@ -1731,7 +2092,6 @@ function CanvasView({
   edgeStyle: CanvasEdgeStyle
 }) {
   const { screenToFlowPosition } = useReactFlow()
-  const [showGrid, setShowGrid] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
 
   const sourceNodes = useMemo(
@@ -1815,6 +2175,9 @@ function CanvasView({
       className="canvas-view"
       onDoubleClickCapture={(event) => {
         const target = event.target as HTMLElement
+        if (target.closest('.react-flow__node')) {
+          return
+        }
         if (!target.closest('.react-flow__pane')) {
           return
         }
@@ -1842,8 +2205,6 @@ function CanvasView({
             ),
           }))
         }
-        fitView
-        fitViewOptions={{ padding: 0.22 }}
         onConnect={onConnect}
         onReconnect={onReconnect}
         reconnectRadius={28}
@@ -1852,7 +2213,12 @@ function CanvasView({
         connectionLineStyle={{ strokeWidth: 1.6 }}
         deleteKeyCode={['Backspace', 'Delete']}
         onEdgesChange={onEdgesChange}
-        onPaneClick={() => onSelectNode(null)}
+        onPaneClick={() => {
+          onSelectNode(null)
+          if (inspectorOpen) {
+            onToggleInspector()
+          }
+        }}
         onNodeClick={(_, node) => onSelectNode(String(node.data.itemId))}
         onNodeDragStop={(_, node) => {
           setFlowState((current) => ({
@@ -1872,7 +2238,7 @@ function CanvasView({
         nodesDraggable
         proOptions={{ hideAttribution: true }}
       >
-        {showGrid && <Background color="#d7d9df" gap={24} />}
+        <Background color="#d7d9df" gap={24} />
       </ReactFlow>
 
       <CanvasQuickActions onOpenAdd={() => setAddOpen(true)} />
@@ -1884,8 +2250,6 @@ function CanvasView({
         onRedo={onRedo}
       />
       <CanvasAuxControls
-        showGrid={showGrid}
-        onToggleGrid={() => setShowGrid((value) => !value)}
         inspectorOpen={inspectorOpen}
         onToggleInspector={onToggleInspector}
       />
@@ -1965,25 +2329,14 @@ function CanvasZoomControls() {
 }
 
 function CanvasAuxControls({
-  showGrid,
-  onToggleGrid,
   inspectorOpen,
   onToggleInspector,
 }: {
-  showGrid: boolean
-  onToggleGrid: () => void
   inspectorOpen: boolean
   onToggleInspector: () => void
 }) {
   return (
     <div className="canvas-aux" role="group" aria-label="Ansicht">
-      <button
-        className={showGrid ? 'aux-button active' : 'aux-button'}
-        onClick={onToggleGrid}
-        title={showGrid ? 'Raster ausblenden' : 'Raster einblenden'}
-      >
-        <LayoutGrid size={15} />
-      </button>
       <button
         className={inspectorOpen ? 'aux-button active' : 'aux-button'}
         onClick={onToggleInspector}
@@ -2032,6 +2385,8 @@ function CanvasHistoryControls({
 /* Board view                                                          */
 /* ------------------------------------------------------------------ */
 
+const CARD_DND_MIME = 'application/x-tisch-card'
+
 function BoardView({
   board,
   items,
@@ -2039,8 +2394,13 @@ function BoardView({
   hideDone,
   selectedItemId,
   onSelectItem,
-  onDragStart,
-  onDropColumn,
+  inspectorOpen,
+  onToggleInspector,
+  onCloseInspector,
+  onOpenItem,
+  onOpenInspectorItem,
+  onUpdateItemContent,
+  onMoveCard,
   onAddColumn,
   onRenameColumn,
   onDeleteColumn,
@@ -2054,9 +2414,18 @@ function BoardView({
   projectItems: Item[]
   hideDone: boolean
   selectedItemId: string | null
-  onSelectItem: (id: string) => void
-  onDragStart: (id: string) => void
-  onDropColumn: (columnId: string) => void
+  onSelectItem: (id: string | null) => void
+  inspectorOpen: boolean
+  onToggleInspector: () => void
+  onCloseInspector: () => void
+  onOpenItem: (id: string) => void
+  onOpenInspectorItem: (id: string) => void
+  onUpdateItemContent: (itemId: string, content: string) => void
+  onMoveCard: (
+    cardId: string,
+    columnId: string,
+    beforeCardId: string | null,
+  ) => void
   onAddColumn: () => void
   onRenameColumn: (columnId: string, title: string) => void
   onDeleteColumn: (columnId: string) => void
@@ -2069,6 +2438,23 @@ function BoardView({
   const candidatesForBoard = projectItems.filter(
     (item) => !takenItemIds.has(item.id),
   )
+  const [draggingCardId, setDraggingCardId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{
+    columnId: string
+    beforeCardId: string | null
+  } | null>(null)
+  const draggingCardIdRef = useRef<string | null>(null)
+
+  function startDrag(cardId: string) {
+    draggingCardIdRef.current = cardId
+    setDraggingCardId(cardId)
+  }
+
+  function endDrag() {
+    draggingCardIdRef.current = null
+    setDraggingCardId(null)
+    setDropTarget(null)
+  }
 
   return (
     <section className="board-view">
@@ -2089,7 +2475,25 @@ function BoardView({
           </label>
         </div>
       </div>
-      <div className="board-grid">
+      <CanvasAuxControls
+        inspectorOpen={inspectorOpen}
+        onToggleInspector={onToggleInspector}
+      />
+      <div
+        className="board-grid"
+        onClick={(event) => {
+          const target = event.target as HTMLElement
+          if (
+            target.closest(
+              '.work-card, .column-add-button, .item-picker, .kanban-column header',
+            )
+          ) {
+            return
+          }
+          onSelectItem(null)
+          onCloseInspector()
+        }}
+      >
         {board.columns.map((column) => {
           const cards = board.cards
             .filter((card) => card.columnId === column.id)
@@ -2107,8 +2511,27 @@ function BoardView({
               candidates={candidatesForBoard}
               selectedItemId={selectedItemId}
               onSelectItem={onSelectItem}
-              onDragStart={onDragStart}
-              onDrop={() => onDropColumn(column.id)}
+              onCloseInspector={onCloseInspector}
+              onOpenItem={onOpenItem}
+              onOpenInspectorItem={onOpenInspectorItem}
+              onUpdateItemContent={onUpdateItemContent}
+              draggingCardId={draggingCardId}
+              getDraggedCardId={() => draggingCardIdRef.current}
+              dropTarget={
+                dropTarget && dropTarget.columnId === column.id
+                  ? dropTarget
+                  : null
+              }
+              onCardDragStart={startDrag}
+              onCardDragEnd={endDrag}
+              onSetDropTarget={(beforeCardId) =>
+                setDropTarget({ columnId: column.id, beforeCardId })
+              }
+              onClearDropTarget={() => setDropTarget(null)}
+              onCommitDrop={(cardId, beforeCardId) => {
+                onMoveCard(cardId, column.id, beforeCardId)
+                endDrag()
+              }}
               onRename={(title) => onRenameColumn(column.id, title)}
               onDelete={() => onDeleteColumn(column.id)}
               onAddExisting={(itemId) =>
@@ -2134,8 +2557,17 @@ function SidebarContextMenu({
   onDelete: () => void
 }) {
   return (
-    <div className="sidebar-context-menu" style={{ left: x, top: y }}>
-      <button className="sidebar-context-item danger" onClick={onDelete}>
+    <div
+      className="sidebar-context-menu"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      style={{ left: x, top: y }}
+    >
+      <button
+        className="sidebar-context-item danger"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={onDelete}
+      >
         <Trash2 size={14} />
         Löschen
       </button>
@@ -2149,8 +2581,18 @@ function BoardColumn({
   candidates,
   selectedItemId,
   onSelectItem,
-  onDragStart,
-  onDrop,
+  onCloseInspector,
+  onOpenItem,
+  onOpenInspectorItem,
+  onUpdateItemContent,
+  draggingCardId,
+  getDraggedCardId,
+  dropTarget,
+  onCardDragStart,
+  onCardDragEnd,
+  onSetDropTarget,
+  onClearDropTarget,
+  onCommitDrop,
   onRename,
   onDelete,
   onAddExisting,
@@ -2161,9 +2603,19 @@ function BoardColumn({
   cards: { card: { id: string; itemId: string }; item: Item | undefined }[]
   candidates: Item[]
   selectedItemId: string | null
-  onSelectItem: (id: string) => void
-  onDragStart: (id: string) => void
-  onDrop: () => void
+  onSelectItem: (id: string | null) => void
+  onCloseInspector: () => void
+  onOpenItem: (id: string) => void
+  onOpenInspectorItem: (id: string) => void
+  onUpdateItemContent: (itemId: string, content: string) => void
+  draggingCardId: string | null
+  getDraggedCardId: () => string | null
+  dropTarget: { beforeCardId: string | null } | null
+  onCardDragStart: (cardId: string) => void
+  onCardDragEnd: () => void
+  onSetDropTarget: (beforeCardId: string | null) => void
+  onClearDropTarget: () => void
+  onCommitDrop: (cardId: string, beforeCardId: string | null) => void
   onRename: (title: string) => void
   onDelete: () => void
   onAddExisting: (itemId: string) => void
@@ -2171,12 +2623,49 @@ function BoardColumn({
   onToggleDone: (itemId: string) => void
 }) {
   const [adderOpen, setAdderOpen] = useState(false)
+  const isDropTarget = dropTarget !== null
+  const resolveDraggedCardId = (event: { dataTransfer: DataTransfer }) => {
+    const draggedCardId = getDraggedCardId()
+    if (draggedCardId) {
+      return draggedCardId
+    }
+
+    return (
+      event.dataTransfer.getData(CARD_DND_MIME) ||
+      event.dataTransfer.getData('text/plain') ||
+      null
+    )
+  }
 
   return (
     <section
-      className="kanban-column"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={onDrop}
+      className={'kanban-column' + (isDropTarget ? ' is-drop-target' : '')}
+      onDragOver={(event) => {
+        if (!resolveDraggedCardId(event)) {
+          return
+        }
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        if (!dropTarget) {
+          onSetDropTarget(null)
+        }
+      }}
+      onDragLeave={(event) => {
+        const related = event.relatedTarget as globalThis.Node | null
+        if (related && event.currentTarget.contains(related)) {
+          return
+        }
+        onClearDropTarget()
+      }}
+      onDrop={(event) => {
+        const cardId = resolveDraggedCardId(event)
+        if (!cardId) {
+          return
+        }
+        event.preventDefault()
+        const beforeCardId = dropTarget?.beforeCardId ?? null
+        onCommitDrop(cardId, beforeCardId)
+      }}
     >
       <header>
         <input
@@ -2189,39 +2678,84 @@ function BoardColumn({
         </button>
       </header>
       <div className="card-stack">
-        {cards.map(({ card, item }) =>
-          item ? (
-            <article
-              className={
-                item.id === selectedItemId ? 'work-card selected' : 'work-card'
-              }
-              draggable
-              key={card.id}
-              onClick={() => onSelectItem(item.id)}
-              onDragStart={() => onDragStart(card.id)}
-            >
-              <div className="card-title-row">
-                <h3>{item.title}</h3>
-                <button
-                  className={item.done ? 'done-check checked' : 'done-check'}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onToggleDone(item.id)
-                  }}
-                >
-                  <span aria-hidden>✓</span>
-                </button>
-              </div>
-              {item.summary && <p>{item.summary}</p>}
-              {item.tags.length > 0 && (
-                <div className="tag-row">
-                  {item.tags.map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
-                </div>
-              )}
-            </article>
-          ) : null,
+        {cards.map(({ card, item }, index) => {
+          if (!item) {
+            return null
+          }
+          const showIndicatorAbove =
+            isDropTarget && dropTarget?.beforeCardId === card.id
+          const isDraggingThis = draggingCardId === card.id
+          return (
+            <div className="card-slot" key={card.id}>
+              {showIndicatorAbove && <div className="drop-indicator" />}
+              <article
+                className={
+                  'work-card' +
+                  (item.id === selectedItemId ? ' selected' : '') +
+                  (isDraggingThis ? ' is-dragging' : '')
+                }
+                draggable
+                onClick={() => {
+                  const shouldClearSelection = item.id === selectedItemId
+                  onSelectItem(shouldClearSelection ? null : item.id)
+                  if (shouldClearSelection) {
+                    onCloseInspector()
+                  }
+                }}
+                onDoubleClickCapture={(event) => {
+                  const target = event.target as HTMLElement
+                  if (target.closest('.work-card-open, .done-check')) {
+                    return
+                  }
+                  onSelectItem(item.id)
+                  onOpenInspectorItem(item.id)
+                }}
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData(CARD_DND_MIME, card.id)
+                  event.dataTransfer.setData('text/plain', card.id)
+                  onCardDragStart(card.id)
+                }}
+                onDragEnd={onCardDragEnd}
+                onDragOver={(event) => {
+                  if (!resolveDraggedCardId(event)) {
+                    return
+                  }
+                  event.preventDefault()
+                  event.stopPropagation()
+                  event.dataTransfer.dropEffect = 'move'
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  const isUpperHalf =
+                    event.clientY < rect.top + rect.height / 2
+                  if (isUpperHalf) {
+                    onSetDropTarget(card.id)
+                  } else {
+                    const nextCard = cards[index + 1]
+                    onSetDropTarget(nextCard ? nextCard.card.id : null)
+                  }
+                }}
+              >
+                <BoardCardEditor
+                  item={item}
+                  onFocus={() => onSelectItem(item.id)}
+                  onOpen={() => onOpenItem(item.id)}
+                  onUpdateContent={onUpdateItemContent}
+                  onToggleDone={onToggleDone}
+                />
+                {item.tags.length > 0 && (
+                  <div className="tag-row">
+                    {item.tags.map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
+                )}
+              </article>
+            </div>
+          )
+        })}
+
+        {isDropTarget && dropTarget?.beforeCardId === null && (
+          <div className="drop-indicator" />
         )}
 
         {adderOpen ? (
@@ -2249,6 +2783,83 @@ function BoardColumn({
         )}
       </div>
     </section>
+  )
+}
+
+function BoardCardEditor({
+  item,
+  onFocus,
+  onOpen,
+  onUpdateContent,
+  onToggleDone,
+}: {
+  item: Item
+  onFocus: () => void
+  onOpen: () => void
+  onUpdateContent: (itemId: string, content: string) => void
+  onToggleDone: (itemId: string) => void
+}) {
+  const { title, body } = useMemo(
+    () => splitItemContent(item.content),
+    [item.content],
+  )
+
+  function updateTitle(nextTitle: string) {
+    onUpdateContent(item.id, composeItemContent(nextTitle, body))
+  }
+
+  function updateBody(nextBody: string) {
+    onUpdateContent(item.id, composeItemContent(title, nextBody))
+  }
+
+  return (
+    <>
+      <div className="card-title-row">
+        <input
+          className="work-card-title"
+          placeholder="Titel"
+          value={title}
+          onChange={(event) => updateTitle(event.target.value)}
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onFocus={onFocus}
+          onPointerDown={(event) => event.stopPropagation()}
+        />
+        <div className="work-card-actions">
+          <button
+            className="work-card-open"
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpen()
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            title="Als Skript öffnen"
+          >
+            <ArrowUpRight size={14} />
+          </button>
+          <button
+            className={item.done ? 'done-check checked' : 'done-check'}
+            onClick={(event) => {
+              event.stopPropagation()
+              onToggleDone(item.id)
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <span aria-hidden>✓</span>
+          </button>
+        </div>
+      </div>
+      <textarea
+        className="work-card-body"
+        placeholder="Hier direkt weiterdenken…"
+        value={body}
+        onChange={(event) => updateBody(event.target.value)}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onFocus={onFocus}
+        onPointerDown={(event) => event.stopPropagation()}
+      />
+    </>
   )
 }
 
@@ -2446,36 +3057,315 @@ function Inspector({
     .filter(Boolean) as Item[]
 
   return (
-    <section className="inspector-card">
-      <span className="eyebrow">{view === 'page' ? 'Skript' : 'Objekt'}</span>
-      <h2>{item.title}</h2>
-      {item.summary && <p>{item.summary}</p>}
-      <dl className="detail-list">
-        <div>
-          <dt>Status</dt>
-          <dd>{item.status}</dd>
-        </div>
-        <div>
-          <dt>Darstellungen</dt>
-          <dd>
-            {[
-              item.kind === 'script' ? 'Skript' : null,
-              boardCard ? 'Board-Karte' : null,
-              canvasNode ? 'Canvas-Node' : null,
-            ]
-              .filter(Boolean)
-              .join(', ') || '-'}
-          </dd>
-        </div>
-        <div>
-          <dt>Datei</dt>
-          <dd>{item.contentPath}</dd>
-        </div>
-        <div>
-          <dt>Verknüpft</dt>
-          <dd>{linkedItems.map((linked) => linked.title).join(', ') || '-'}</dd>
-        </div>
-      </dl>
+    <>
+      <section className="inspector-card">
+        <span className="eyebrow">{view === 'page' ? 'Skript' : 'Objekt'}</span>
+        <h2>{item.title}</h2>
+        {item.summary && <p>{item.summary}</p>}
+        <dl className="detail-list">
+          <div>
+            <dt>Status</dt>
+            <dd>{item.status}</dd>
+          </div>
+          <div>
+            <dt>Darstellungen</dt>
+            <dd>
+              {[
+                item.kind === 'script' ? 'Skript' : null,
+                boardCard ? 'Board-Karte' : null,
+                canvasNode ? 'Canvas-Node' : null,
+              ]
+                .filter(Boolean)
+                .join(', ') || '-'}
+            </dd>
+          </div>
+          <div>
+            <dt>Datei</dt>
+            <dd>{item.contentPath}</dd>
+          </div>
+          <div>
+            <dt>Verknüpft</dt>
+            <dd>{linkedItems.map((linked) => linked.title).join(', ') || '-'}</dd>
+          </div>
+        </dl>
+      </section>
+      {view === 'board' && canvas && (
+        <CanvasConnectionMap item={item} canvas={canvas} items={items} />
+      )}
+    </>
+  )
+}
+
+function CanvasConnectionMap({
+  item,
+  canvas,
+  items,
+}: {
+  item: Item
+  canvas: IdeaCanvas
+  items: Item[]
+}) {
+  const node = canvas.nodes.find((entry) => entry.itemId === item.id)
+  const connectedNodeIds = new Set(
+    node
+      ? canvas.edges.flatMap((edge) => {
+          if (edge.source === node.id) {
+            return [edge.target]
+          }
+          if (edge.target === node.id) {
+            return [edge.source]
+          }
+          return []
+        })
+      : [],
+  )
+  const connectedItems = Array.from(connectedNodeIds)
+    .map((nodeId) => canvas.nodes.find((entry) => entry.id === nodeId))
+    .filter(Boolean)
+    .map((entry) => items.find((candidate) => candidate.id === entry?.itemId))
+    .filter(Boolean) as Item[]
+
+  const nodesWithLayout = canvas.nodes.map((entry) => ({
+    ...entry,
+    width: entry.width ?? 300,
+    height: entry.height ?? 220,
+  }))
+  const bounds = nodesWithLayout.reduce(
+    (result, entry) => ({
+      minX: Math.min(result.minX, entry.x),
+      minY: Math.min(result.minY, entry.y),
+      maxX: Math.max(result.maxX, entry.x + entry.width),
+      maxY: Math.max(result.maxY, entry.y + entry.height),
+    }),
+    {
+      minX: Number.POSITIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY,
+    },
+  )
+  const hasBounds = Number.isFinite(bounds.minX)
+  const viewWidth = 332
+  const viewHeight = 232
+  const padding = 22
+  const contentWidth = hasBounds ? Math.max(1, bounds.maxX - bounds.minX) : 1
+  const contentHeight = hasBounds ? Math.max(1, bounds.maxY - bounds.minY) : 1
+  const scale = Math.min(
+    (viewWidth - padding * 2) / contentWidth,
+    (viewHeight - padding * 2) / contentHeight,
+  )
+  const offsetX = hasBounds
+    ? (viewWidth - contentWidth * scale) / 2 - bounds.minX * scale
+    : padding
+  const offsetY = hasBounds
+    ? (viewHeight - contentHeight * scale) / 2 - bounds.minY * scale
+    : padding
+
+  return (
+    <section className="connection-map-section">
+      <div className="connection-map-header">
+        <span className="eyebrow">Canvas</span>
+        <span className="connection-map-name">{canvas.title}</span>
+      </div>
+      {!node ? (
+        <p className="connection-map-empty">
+          Dieses Objekt liegt im aktuellen Canvas nicht als Node vor.
+        </p>
+      ) : (
+        <>
+          <div className="connection-map-frame">
+            <svg
+              className="connection-map-svg"
+              viewBox={`0 0 ${viewWidth} ${viewHeight}`}
+              aria-label="Verbindungen im Canvas"
+            >
+              <defs>
+                <pattern
+                  id="connection-map-grid"
+                  width="24"
+                  height="24"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <line
+                    className="connection-map-grid-line"
+                    x1="24"
+                    y1="0"
+                    x2="24"
+                    y2="24"
+                  />
+                  <line
+                    className="connection-map-grid-line"
+                    x1="0"
+                    y1="24"
+                    x2="24"
+                    y2="24"
+                  />
+                </pattern>
+              </defs>
+
+              <rect
+                className="connection-map-surface"
+                x="0"
+                y="0"
+                width={viewWidth}
+                height={viewHeight}
+                rx="22"
+                ry="22"
+              />
+              <rect
+                className="connection-map-grid"
+                x="0"
+                y="0"
+                width={viewWidth}
+                height={viewHeight}
+                rx="22"
+                ry="22"
+              />
+
+              {canvas.edges.map((edge) => {
+                const source = nodesWithLayout.find((entry) => entry.id === edge.source)
+                const target = nodesWithLayout.find((entry) => entry.id === edge.target)
+                if (!source || !target) {
+                  return null
+                }
+
+                const sourceHighlighted =
+                  source.id === node.id || connectedNodeIds.has(source.id)
+                const targetHighlighted =
+                  target.id === node.id || connectedNodeIds.has(target.id)
+
+                return (
+                  <line
+                    key={edge.id}
+                    className={
+                      sourceHighlighted && targetHighlighted
+                        ? 'connection-map-line connection-map-line--active'
+                        : 'connection-map-line'
+                    }
+                    x1={offsetX + (source.x + source.width / 2) * scale}
+                    y1={offsetY + (source.y + source.height / 2) * scale}
+                    x2={offsetX + (target.x + target.width / 2) * scale}
+                    y2={offsetY + (target.y + target.height / 2) * scale}
+                  />
+                )
+              })}
+
+              {nodesWithLayout.map((entry) => {
+                const mappedItem = items.find((candidate) => candidate.id === entry.itemId)
+                const isActive = entry.id === node.id
+                const isConnected = connectedNodeIds.has(entry.id)
+                const width = Math.max(18, entry.width * scale)
+                const height = Math.max(14, entry.height * scale)
+                const x = offsetX + entry.x * scale
+                const y = offsetY + entry.y * scale
+                const { title, body } = splitItemContent(mappedItem?.content ?? '')
+                const noteTitle = (title || mappedItem?.title || 'Ohne Titel').slice(0, 18)
+                const bodyLines = (body || mappedItem?.summary || '')
+                  .split('\n')
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .slice(0, 3)
+                const inset = Math.max(6, Math.min(10, width * 0.08))
+                const titleY = y + Math.max(10, Math.min(16, height * 0.22))
+                const bodyStartY = titleY + Math.max(8, Math.min(12, height * 0.16))
+                const bodyLineSpacing = Math.max(5, Math.min(9, height * 0.12))
+                const openButtonSize = Math.max(6, Math.min(10, width * 0.12))
+                const canShowTitle = width >= 46 && height >= 28
+                const canShowBody = width >= 58 && height >= 38
+
+                return (
+                  <g key={entry.id}>
+                    <rect
+                      className={[
+                        'connection-map-note-shadow',
+                        isActive ? 'connection-map-note-shadow--active' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      x={x + 2}
+                      y={y + 3}
+                      rx={Math.min(18, height / 3)}
+                      ry={Math.min(18, height / 3)}
+                      width={width}
+                      height={height}
+                    />
+                    <rect
+                      className={[
+                        'connection-map-note',
+                        isConnected ? 'connection-map-note--linked' : '',
+                        isActive ? 'connection-map-note--active' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      x={x}
+                      y={y}
+                      rx={Math.min(14, height / 3)}
+                      ry={Math.min(14, height / 3)}
+                      width={width}
+                      height={height}
+                    />
+                    {canShowTitle && (
+                      <>
+                        <text
+                          className={
+                            isActive
+                              ? 'connection-map-note-title connection-map-note-title--active'
+                              : 'connection-map-note-title'
+                          }
+                          x={x + inset}
+                          y={titleY}
+                        >
+                          {noteTitle}
+                        </text>
+                        <rect
+                          className={
+                            isActive
+                              ? 'connection-map-note-open connection-map-note-open--active'
+                              : 'connection-map-note-open'
+                          }
+                          x={x + width - inset - openButtonSize}
+                          y={y + inset}
+                          rx={Math.max(2, openButtonSize / 3)}
+                          ry={Math.max(2, openButtonSize / 3)}
+                          width={openButtonSize}
+                          height={openButtonSize}
+                        />
+                      </>
+                    )}
+                    {canShowBody &&
+                      (bodyLines.length > 0 ? bodyLines : ['', '', '']).map(
+                        (line, index) => {
+                          const lineWidthFactor = line
+                            ? Math.max(0.34, Math.min(0.92, line.length / 24))
+                            : [0.74, 0.58, 0.41][index]
+                          const lineWidth = (width - inset * 2) * lineWidthFactor
+                          return (
+                            <line
+                              key={`${entry.id}-line-${index}`}
+                              className={
+                                isActive
+                                  ? 'connection-map-note-line connection-map-note-line--active'
+                                  : 'connection-map-note-line'
+                              }
+                              x1={x + inset}
+                              y1={bodyStartY + index * bodyLineSpacing}
+                              x2={x + inset + lineWidth}
+                              y2={bodyStartY + index * bodyLineSpacing}
+                            />
+                          )
+                        },
+                      )}
+                  </g>
+                )
+              })}
+            </svg>
+          </div>
+          <div className="connection-map-caption">
+            <span>{connectedItems.length} direkte Verbindungen</span>
+            <span>{canvas.nodes.length} Nodes im Canvas</span>
+          </div>
+        </>
+      )}
     </section>
   )
 }
@@ -2509,6 +3399,7 @@ function toFlowNodes(
       position: { x: node.x, y: node.y },
       data: {
         itemId: node.itemId,
+        title: item?.title ?? 'Ohne Titel',
         content: item?.content ?? '',
         autoFocusBody: callbacks.pendingFocusItemId === node.itemId,
         onUpdateContent: callbacks.onUpdateContent,
@@ -2528,11 +3419,25 @@ function CanvasNoteNode({
   data,
   selected,
 }: NodeProps<Node<CanvasFlowNodeData, 'tischNode'>>) {
+  const titleInputRef = useRef<HTMLInputElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const parsedContent = useMemo(() => splitItemContent(data.content), [data.content])
+  const title =
+    parsedContent.title ||
+    (!data.content.trim() && data.title === 'Ohne Titel' ? '' : data.title)
+  const body = parsedContent.body
   const [menuSelection, setMenuSelection] = useState<{
     selectionStart: number
     selectionEnd: number
   } | null>(null)
+
+  function updateTitle(nextTitle: string) {
+    data.onUpdateContent(data.itemId, composeItemContent(nextTitle, body))
+  }
+
+  function updateBody(nextBody: string) {
+    data.onUpdateContent(data.itemId, composeItemContent(title, nextBody))
+  }
 
   useEffect(() => {
     if (!menuSelection) {
@@ -2548,7 +3453,19 @@ function CanvasNoteNode({
   }, [menuSelection])
 
   useEffect(() => {
-    if (!data.autoFocusBody || !textareaRef.current) {
+    if (!data.autoFocusBody) {
+      return
+    }
+
+    if (!title.trim() && titleInputRef.current) {
+      titleInputRef.current.focus()
+      const length = titleInputRef.current.value.length
+      titleInputRef.current.setSelectionRange(length, length)
+      data.onAutoFocusHandled(data.itemId)
+      return
+    }
+
+    if (!textareaRef.current) {
       return
     }
 
@@ -2556,7 +3473,7 @@ function CanvasNoteNode({
     const length = textareaRef.current.value.length
     textareaRef.current.setSelectionRange(length, length)
     data.onAutoFocusHandled(data.itemId)
-  }, [data])
+  }, [data, title])
 
   return (
     <>
@@ -2584,6 +3501,14 @@ function CanvasNoteNode({
       />
       <div className={selected ? 'canvas-note-node is-selected' : 'canvas-note-node'}>
         <div className="canvas-note-header">
+          <input
+            ref={titleInputRef}
+            className="canvas-note-title nodrag nowheel"
+            placeholder="Titel"
+            value={title}
+            onChange={(event) => updateTitle(event.target.value)}
+            onPointerDown={(event) => event.stopPropagation()}
+          />
           <button
             className="canvas-node-open nodrag"
             onClick={(event) => {
@@ -2601,10 +3526,8 @@ function CanvasNoteNode({
           ref={textareaRef}
           className="canvas-note-body nodrag nowheel"
           placeholder="Schreib hier..."
-          value={data.content}
-          onChange={(event) =>
-            data.onUpdateContent(data.itemId, event.target.value)
-          }
+          value={body}
+          onChange={(event) => updateBody(event.target.value)}
           onContextMenu={(event) => {
             event.preventDefault()
             event.stopPropagation()
@@ -2633,15 +3556,17 @@ function CanvasNoteNode({
                   return
                 }
 
+                const bodyOffset = title.trim() ? `# ${title.trim()}\n\n`.length : 0
                 const cursor = await data.onInsertImage(
                   data.itemId,
-                  menuSelection.selectionStart,
-                  menuSelection.selectionEnd,
+                  menuSelection.selectionStart + bodyOffset,
+                  menuSelection.selectionEnd + bodyOffset,
                 )
                 setMenuSelection(null)
                 if (cursor !== null && textareaRef.current) {
+                  const nextCursor = Math.max(0, cursor - bodyOffset)
                   textareaRef.current.focus()
-                  textareaRef.current.setSelectionRange(cursor, cursor)
+                  textareaRef.current.setSelectionRange(nextCursor, nextCursor)
                 }
               }}
             >
