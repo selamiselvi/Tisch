@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   ConnectionLineType,
@@ -259,6 +259,17 @@ function isCanvasConnectionAllowed(
   )
 }
 
+function isEditableKeyboardTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) {
+    return false
+  }
+
+  return Boolean(
+    target.closest('input, textarea, select, [contenteditable="true"]') ||
+      (target instanceof HTMLElement && target.isContentEditable),
+  )
+}
+
 function deriveItemFieldsFromContent(item: Item, content: string) {
   const { title, body } = splitItemContent(content)
   const nextTitle = title.slice(0, 120) || item.title || 'Ohne Titel'
@@ -466,7 +477,6 @@ function App() {
   const [expandedCategories, setExpandedCategories] = useState<
     Record<CategoryId, boolean>
   >({ canvas: true, board: false, skripte: false })
-  const [projectDetailOpen, setProjectDetailOpen] = useState(true)
   const [pageMode, setPageMode] = useState<PageMode>('write')
   const [rightOpen, setRightOpen] = useState(false)
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(() =>
@@ -497,6 +507,8 @@ function App() {
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>('appearance')
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  const [projectNameDraft, setProjectNameDraft] = useState('')
   const [settingsReturnView, setSettingsReturnView] =
     useState<WorkspaceView>('canvas')
   const [sidebarWidth, setSidebarWidth] = useState(() =>
@@ -1020,8 +1032,24 @@ function App() {
     })
   }
 
-  function addProject() {
+  function openProjectDialog() {
+    setSettingsMenuOpen(false)
+    setProjectNameDraft('')
+    setProjectDialogOpen(true)
+  }
+
+  function closeProjectDialog() {
+    setProjectNameDraft('')
+    setProjectDialogOpen(false)
+  }
+
+  function createProject(name: string) {
     if (!data) {
+      return
+    }
+
+    const nextName = name.trim()
+    if (!nextName) {
       return
     }
 
@@ -1034,16 +1062,17 @@ function App() {
       '#047857',
     ]
     const accent = palette[data.projects.length % palette.length]
-    const name = `Projekt ${data.projects.length + 1}`
     const id = `project-${nanoid(6)}`
     commit({
       ...data,
-      projects: [...data.projects, { id, name, accent, description: '' }],
+      projects: [...data.projects, { id, name: nextName, accent, description: '' }],
     })
     setActiveProjectId(id)
     setActiveCanvasId(null)
     setActiveBoardId(null)
     setActiveItemId(null)
+    setView('canvas')
+    closeProjectDialog()
   }
 
   function renameProject(projectId: string, name: string) {
@@ -1313,11 +1342,7 @@ function App() {
       if (event.key === 'Escape') {
         setSidebarMenu(null)
       }
-      const target = event.target as HTMLElement | null
-      const isEditable =
-        target?.tagName === 'INPUT' ||
-        target?.tagName === 'TEXTAREA' ||
-        target?.isContentEditable
+      const isEditable = isEditableKeyboardTarget(event.target)
 
       if (
         event.key === 'Delete' &&
@@ -1676,10 +1701,34 @@ function App() {
       return
     }
 
-    const changed = applyEdgeChanges(changes, toFlowEdges(activeCanvas.edges))
+    const structuralChanges = changes.filter((change) => change.type !== 'select')
+    if (structuralChanges.length === 0) {
+      return
+    }
+
+    const changed = applyEdgeChanges(
+      structuralChanges,
+      toFlowEdges(activeCanvas.edges, activeCanvas.nodes),
+    )
     updateCanvas(activeCanvas.id, (canvas) => ({
       ...canvas,
       edges: changed.map(toCanvasEdge),
+    }))
+  }
+
+  function deleteCanvasEdges(edgeIds: string[]) {
+    if (!activeCanvas || edgeIds.length === 0) {
+      return
+    }
+
+    const ids = new Set(edgeIds)
+    if (!activeCanvas.edges.some((edge) => ids.has(edge.id))) {
+      return
+    }
+
+    updateCanvas(activeCanvas.id, (canvas) => ({
+      ...canvas,
+      edges: canvas.edges.filter((edge) => !ids.has(edge.id)),
     }))
   }
 
@@ -1690,7 +1739,7 @@ function App() {
 
     const nextEdges = addEdge(
       { ...connection, id: `edge-${nanoid(8)}` },
-      toFlowEdges(activeCanvas.edges),
+      toFlowEdges(activeCanvas.edges, activeCanvas.nodes),
     )
     updateCanvas(activeCanvas.id, (canvas) => ({
       ...canvas,
@@ -1706,7 +1755,7 @@ function App() {
     const nextEdges = reconnectEdge(
       oldEdge,
       newConnection,
-      toFlowEdges(activeCanvas.edges),
+      toFlowEdges(activeCanvas.edges, activeCanvas.nodes),
     )
     updateCanvas(activeCanvas.id, (canvas) => ({
       ...canvas,
@@ -1880,7 +1929,7 @@ function App() {
               <button
                 aria-label="Neues Projekt"
                 className="sidebar-heading-add"
-                onClick={addProject}
+                onClick={openProjectDialog}
                 title="Neues Projekt"
                 type="button"
               >
@@ -1939,94 +1988,81 @@ function App() {
           {activeProject && (
             <section className="sidebar-section project-detail">
               <div className="project-detail-header">
-                <button
-                  className="project-detail-toggle"
-                  onClick={() => setProjectDetailOpen((open) => !open)}
-                  title={projectDetailOpen ? 'Bereich einklappen' : 'Bereich ausklappen'}
-                >
-                  {projectDetailOpen ? (
-                    <ChevronDown size={14} aria-hidden />
-                  ) : (
-                    <ChevronRight size={14} aria-hidden />
-                  )}
-                </button>
                 <span className="sidebar-title-label">{activeProject.name}</span>
               </div>
 
-              {projectDetailOpen && (
-                <div className="sidebar-section-scroll project-detail-scroll">
-                  <div className="category-list">
-                    <CategorySection
-                      id="canvas"
-                      label="Canvas"
-                      icon={CanvasSidebarIcon}
-                      expanded={expandedCategories.canvas}
-                      onToggle={() => toggleCategory('canvas')}
-                      onAdd={addCanvas}
-                      addLabel="Neues Canvas"
-                      emptyHint="Noch kein Canvas."
-                      entries={projectCanvases.map((canvas) => ({
-                        id: canvas.id,
-                        label: canvas.title,
-                        active: view === 'canvas' && canvas.id === activeCanvas?.id,
-                        onClick: () => openCanvas(canvas.id),
-                        onRename: (value: string) => renameCanvas(canvas.id, value),
-                        onContextMenu: (event: React.MouseEvent) =>
-                          openSidebarMenu(event, {
-                            kind: 'canvas',
-                            id: canvas.id,
-                          }),
-                      }))}
-                    />
+              <div className="sidebar-section-scroll project-detail-scroll">
+                <div className="category-list">
+                  <CategorySection
+                    id="canvas"
+                    label="Canvas"
+                    icon={CanvasSidebarIcon}
+                    expanded={expandedCategories.canvas}
+                    onToggle={() => toggleCategory('canvas')}
+                    onAdd={addCanvas}
+                    addLabel="Neues Canvas"
+                    emptyHint="Noch kein Canvas."
+                    entries={projectCanvases.map((canvas) => ({
+                      id: canvas.id,
+                      label: canvas.title,
+                      active: view === 'canvas' && canvas.id === activeCanvas?.id,
+                      onClick: () => openCanvas(canvas.id),
+                      onRename: (value: string) => renameCanvas(canvas.id, value),
+                      onContextMenu: (event: React.MouseEvent) =>
+                        openSidebarMenu(event, {
+                          kind: 'canvas',
+                          id: canvas.id,
+                        }),
+                    }))}
+                  />
 
-                    <CategorySection
-                      id="board"
-                      label="Ideen Board"
-                      icon={BoardSidebarIcon}
-                      expanded={expandedCategories.board}
-                      onToggle={() => toggleCategory('board')}
-                      onAdd={addBoard}
-                      addLabel="Neues Board"
-                      emptyHint="Noch kein Board."
-                      entries={projectBoards.map((board) => ({
-                        id: board.id,
-                        label: board.title,
-                        active: view === 'board' && board.id === activeBoard?.id,
-                        onClick: () => openBoard(board.id),
-                        onRename: (value: string) => renameBoard(board.id, value),
-                        onContextMenu: (event: React.MouseEvent) =>
-                          openSidebarMenu(event, {
-                            kind: 'board',
-                            id: board.id,
-                          }),
-                      }))}
-                    />
+                  <CategorySection
+                    id="board"
+                    label="Board"
+                    icon={BoardSidebarIcon}
+                    expanded={expandedCategories.board}
+                    onToggle={() => toggleCategory('board')}
+                    onAdd={addBoard}
+                    addLabel="Neues Board"
+                    emptyHint="Noch kein Board."
+                    entries={projectBoards.map((board) => ({
+                      id: board.id,
+                      label: board.title,
+                      active: view === 'board' && board.id === activeBoard?.id,
+                      onClick: () => openBoard(board.id),
+                      onRename: (value: string) => renameBoard(board.id, value),
+                      onContextMenu: (event: React.MouseEvent) =>
+                        openSidebarMenu(event, {
+                          kind: 'board',
+                          id: board.id,
+                        }),
+                    }))}
+                  />
 
-                    <CategorySection
-                      id="skripte"
-                      label="Zettel"
-                      icon={ScriptSidebarIcon}
-                      expanded={expandedCategories.skripte}
-                      onToggle={() => toggleCategory('skripte')}
-                      onAdd={addScript}
-                      addLabel="Neuer Zettel"
-                      emptyHint="Noch keine Zettel."
-                      entries={projectScripts.map((item) => ({
-                        id: item.id,
-                        label: item.title,
-                        active: view === 'page' && item.id === activeItem?.id,
-                        onClick: () => openScript(item.id),
-                        onRename: (value: string) => renameItem(item.id, value),
-                        onContextMenu: (event: React.MouseEvent) =>
-                          openSidebarMenu(event, {
-                            kind: 'script',
-                            id: item.id,
-                          }),
-                      }))}
-                    />
-                  </div>
+                  <CategorySection
+                    id="skripte"
+                    label="Zettel"
+                    icon={ScriptSidebarIcon}
+                    expanded={expandedCategories.skripte}
+                    onToggle={() => toggleCategory('skripte')}
+                    onAdd={addScript}
+                    addLabel="Neuer Zettel"
+                    emptyHint="Noch keine Zettel."
+                    entries={projectScripts.map((item) => ({
+                      id: item.id,
+                      label: item.title,
+                      active: view === 'page' && item.id === activeItem?.id,
+                      onClick: () => openScript(item.id),
+                      onRename: (value: string) => renameItem(item.id, value),
+                      onContextMenu: (event: React.MouseEvent) =>
+                        openSidebarMenu(event, {
+                          kind: 'script',
+                          id: item.id,
+                        }),
+                    }))}
+                  />
                 </div>
-              )}
+              </div>
             </section>
           )}
         </div>
@@ -2128,7 +2164,7 @@ function App() {
             title="Kein Projekt"
             description="Lege zuerst ein Projekt an, damit du Canvas, Boards und Zettel organisieren kannst."
             actionLabel="Neues Projekt"
-            onAction={addProject}
+            onAction={openProjectDialog}
           />
         )}
 
@@ -2166,9 +2202,10 @@ function App() {
             <CanvasView
               canvas={activeCanvas}
               items={data.items}
-              edges={toFlowEdges(activeCanvas.edges)}
+              edges={toFlowEdges(activeCanvas.edges, activeCanvas.nodes)}
               onNodeDragStop={onCanvasNodeDragStop}
               onEdgesChange={onCanvasEdgesChange}
+              onDeleteEdges={deleteCanvasEdges}
               onConnect={onCanvasConnect}
               onReconnect={onCanvasReconnect}
               onOpenNode={openNodeAsScript}
@@ -2242,7 +2279,7 @@ function App() {
         {view !== 'settings' && activeProject && view === 'board' && !activeBoard && (
           <EmptyView
             title="Kein Board"
-            description="Lege in der Seitenleiste ein neues Ideen Board an."
+            description="Lege in der Seitenleiste ein neues Board an."
             actionLabel="Neues Board"
             onAction={addBoard}
           />
@@ -2298,7 +2335,68 @@ function App() {
           onDelete={() => deleteSidebarTarget(sidebarMenu)}
         />
       )}
+
+      {projectDialogOpen && (
+        <ProjectNameDialog
+          value={projectNameDraft}
+          onCancel={closeProjectDialog}
+          onChange={setProjectNameDraft}
+          onSubmit={() => createProject(projectNameDraft)}
+        />
+      )}
     </main>
+  )
+}
+
+function ProjectNameDialog({
+  value,
+  onCancel,
+  onChange,
+  onSubmit,
+}: {
+  value: string
+  onCancel: () => void
+  onChange: (value: string) => void
+  onSubmit: () => void
+}) {
+  const canSubmit = value.trim().length > 0
+
+  return (
+    <div className="project-dialog-overlay" role="presentation">
+      <form
+        aria-label="Neues Projekt"
+        className="project-dialog"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (canSubmit) {
+            onSubmit()
+          }
+        }}
+      >
+        <label htmlFor="new-project-name">Projektname</label>
+        <input
+          autoFocus
+          id="new-project-name"
+          placeholder="Neues Projekt"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              onCancel()
+            }
+          }}
+        />
+        <div className="project-dialog-actions">
+          <button type="button" onClick={onCancel}>
+            Abbrechen
+          </button>
+          <button type="submit" disabled={!canSubmit}>
+            Anlegen
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }
 
@@ -3099,6 +3197,7 @@ function CanvasView({
   edges,
   onNodeDragStop,
   onEdgesChange,
+  onDeleteEdges,
   onConnect,
   onReconnect,
   onOpenNode,
@@ -3131,6 +3230,7 @@ function CanvasView({
   edges: Edge[]
   onNodeDragStop: (node: Node) => void
   onEdgesChange: (changes: EdgeChange[]) => void
+  onDeleteEdges: (edgeIds: string[]) => void
   onConnect: (connection: Connection) => void
   onReconnect: (oldEdge: Edge, newConnection: Connection) => void
   onOpenNode: (itemId: string) => void
@@ -3160,6 +3260,9 @@ function CanvasView({
 }) {
   const { screenToFlowPosition, setCenter } = useReactFlow()
   const [addOpen, setAddOpen] = useState(false)
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(
+    () => new Set(),
+  )
 
   const sourceNodes = useMemo(
     () =>
@@ -3225,6 +3328,35 @@ function CanvasView({
       : edgeStyle === 'straight'
         ? ConnectionLineType.Straight
         : ConnectionLineType.Bezier
+  const edgeIdSet = useMemo(
+    () => new Set(edges.map((edge) => edge.id)),
+    [edges],
+  )
+  const activeSelectedEdgeIds = useMemo(() => {
+    if (selectedItemId) {
+      return new Set<string>()
+    }
+
+    return new Set(
+      Array.from(selectedEdgeIds).filter((edgeId) => edgeIdSet.has(edgeId)),
+    )
+  }, [edgeIdSet, selectedEdgeIds, selectedItemId])
+  const flowEdges = useMemo(
+    () =>
+      edges.map((edge) => ({
+        ...edge,
+        selected: activeSelectedEdgeIds.has(edge.id),
+        type: edgeTypeName,
+        style: { ...edge.style, strokeWidth: 1.6 },
+        markerEnd: edge.markerEnd ?? {
+          type: MarkerType.ArrowClosed,
+          width: 14,
+          height: 14,
+        },
+        reconnectable: true,
+      })),
+    [activeSelectedEdgeIds, edgeTypeName, edges],
+  )
   const defaultEdgeOptions = useMemo(
     () => ({
       type: edgeTypeName,
@@ -3243,6 +3375,93 @@ function CanvasView({
 
   const takenItemIds = new Set(canvas.nodes.map((node) => node.itemId))
   const availableItems = projectItems.filter((item) => !takenItemIds.has(item.id))
+  const selectedEdgeCount = activeSelectedEdgeIds.size
+
+  const clearSelectedEdges = useCallback(() => {
+    setSelectedEdgeIds((current) =>
+      current.size === 0 ? current : new Set(),
+    )
+  }, [])
+
+  const deleteSelectedEdges = useCallback(() => {
+    const edgeIds = Array.from(activeSelectedEdgeIds)
+    if (edgeIds.length === 0) {
+      return
+    }
+
+    setSelectedEdgeIds(new Set())
+    onDeleteEdges(edgeIds)
+  }, [activeSelectedEdgeIds, onDeleteEdges])
+
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      setSelectedEdgeIds((current) => {
+        let next = current
+
+        changes.forEach((change) => {
+          if (change.type === 'select') {
+            if (next === current) {
+              next = new Set(current)
+            }
+            if (change.selected) {
+              next.add(change.id)
+            } else {
+              next.delete(change.id)
+            }
+          }
+
+          if (change.type === 'remove' && next.has(change.id)) {
+            if (next === current) {
+              next = new Set(current)
+            }
+            next.delete(change.id)
+          }
+        })
+
+        return next
+      })
+
+      const structuralChanges = changes.filter((change) => change.type !== 'select')
+      if (structuralChanges.length > 0) {
+        onEdgesChange(structuralChanges)
+      }
+    },
+    [onEdgesChange],
+  )
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (isEditableKeyboardTarget(event.target)) {
+        return
+      }
+
+      if (event.key === 'Escape') {
+        if (activeSelectedEdgeIds.size > 0 || selectedItemId) {
+          event.preventDefault()
+          clearSelectedEdges()
+          onSelectNode(null)
+        }
+        return
+      }
+
+      if (
+        (event.key === 'Backspace' || event.key === 'Delete') &&
+        activeSelectedEdgeIds.size > 0
+      ) {
+        event.preventDefault()
+        deleteSelectedEdges()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [
+    clearSelectedEdges,
+    deleteSelectedEdges,
+    onSelectNode,
+    activeSelectedEdgeIds,
+    selectedItemId,
+  ])
 
   useEffect(() => {
     if (!pendingCenterItemId) {
@@ -3299,7 +3518,7 @@ function CanvasView({
       <ReactFlow
         key={canvas.id}
         nodes={flowNodes}
-        edges={edges}
+        edges={flowEdges}
         nodeTypes={nodeTypes}
         connectionMode={ConnectionMode.Loose}
         onNodesChange={(changes: NodeChange[]) =>
@@ -3320,15 +3539,27 @@ function CanvasView({
         defaultEdgeOptions={defaultEdgeOptions}
         connectionLineType={connectionLineType}
         connectionLineStyle={{ strokeWidth: 1.6 }}
-        deleteKeyCode={['Backspace', 'Delete']}
-        onEdgesChange={onEdgesChange}
-        onPaneClick={() => {
+        deleteKeyCode={null}
+        onEdgesChange={handleEdgesChange}
+        onEdgeClick={(event, edge) => {
+          event.stopPropagation()
+          setSelectedEdgeIds(new Set([edge.id]))
           onSelectNode(null)
           if (inspectorOpen) {
             onToggleInspector()
           }
         }}
-        onNodeClick={(_, node) => onSelectNode(String(node.data.itemId))}
+        onPaneClick={() => {
+          clearSelectedEdges()
+          onSelectNode(null)
+          if (inspectorOpen) {
+            onToggleInspector()
+          }
+        }}
+        onNodeClick={(_, node) => {
+          clearSelectedEdges()
+          onSelectNode(String(node.data.itemId))
+        }}
         onNodeDragStop={(_, node) => {
           setFlowState((current) => ({
             sourceKey,
@@ -3351,7 +3582,11 @@ function CanvasView({
         <Background color="#d7d9df" gap={24} />
       </ReactFlow>
 
-      <CanvasQuickActions onOpenAdd={() => setAddOpen(true)} />
+      <CanvasQuickActions
+        selectedEdgeCount={selectedEdgeCount}
+        onDeleteSelectedEdges={deleteSelectedEdges}
+        onOpenAdd={() => setAddOpen(true)}
+      />
       <CanvasZoomControls />
       <CanvasHistoryControls
         canUndo={canUndo}
@@ -3385,16 +3620,38 @@ function CanvasView({
 }
 
 function CanvasQuickActions({
+  selectedEdgeCount,
+  onDeleteSelectedEdges,
   onOpenAdd,
 }: {
+  selectedEdgeCount: number
+  onDeleteSelectedEdges: () => void
   onOpenAdd: () => void
 }) {
   return (
     <div className="canvas-tool-pill" role="toolbar" aria-label="Canvas-Aktionen">
+      {selectedEdgeCount > 0 && (
+        <button
+          className="canvas-action-button danger"
+          onClick={onDeleteSelectedEdges}
+          title={
+            selectedEdgeCount === 1
+              ? 'Verbindung lösen'
+              : 'Verbindungen lösen'
+          }
+          type="button"
+        >
+          <Trash2 size={16} />
+          <span>
+            {selectedEdgeCount === 1 ? 'Verbindung' : 'Verbindungen'}
+          </span>
+        </button>
+      )}
       <button
         className="canvas-action-button"
         onClick={onOpenAdd}
         title="Zettel hinzufügen"
+        type="button"
       >
         <Plus size={16} />
         <span>Zettel</span>
@@ -4760,14 +5017,72 @@ function CanvasNoteNode({
   )
 }
 
-function toFlowEdges(edges: CanvasEdge[]): Edge[] {
-  return edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    sourceHandle: edge.sourceHandle ?? null,
-    targetHandle: edge.targetHandle ?? null,
-  }))
+function inferCanvasEdgeHandles(
+  edge: CanvasEdge,
+  nodes: CanvasNode[] | undefined,
+) {
+  if ((edge.sourceHandle && edge.targetHandle) || !nodes) {
+    return {
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null,
+    }
+  }
+
+  const source = nodes.find((node) => node.id === edge.source)
+  const target = nodes.find((node) => node.id === edge.target)
+  if (!source || !target) {
+    return {
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null,
+    }
+  }
+
+  const sourceCenter = {
+    x: source.x + (source.width ?? 300) / 2,
+    y: source.y + (source.height ?? 220) / 2,
+  }
+  const targetCenter = {
+    x: target.x + (target.width ?? 300) / 2,
+    y: target.y + (target.height ?? 220) / 2,
+  }
+  const deltaX = targetCenter.x - sourceCenter.x
+  const deltaY = targetCenter.y - sourceCenter.y
+
+  if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    return deltaX >= 0
+      ? {
+          sourceHandle: edge.sourceHandle ?? 'right',
+          targetHandle: edge.targetHandle ?? 'left',
+        }
+      : {
+          sourceHandle: edge.sourceHandle ?? 'left',
+          targetHandle: edge.targetHandle ?? 'right',
+        }
+  }
+
+  return deltaY >= 0
+    ? {
+        sourceHandle: edge.sourceHandle ?? 'bottom',
+        targetHandle: edge.targetHandle ?? 'top',
+      }
+    : {
+        sourceHandle: edge.sourceHandle ?? 'top',
+        targetHandle: edge.targetHandle ?? 'bottom',
+      }
+}
+
+function toFlowEdges(edges: CanvasEdge[], nodes?: CanvasNode[]): Edge[] {
+  return edges.map((edge) => {
+    const handles = inferCanvasEdgeHandles(edge, nodes)
+
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: handles.sourceHandle,
+      targetHandle: handles.targetHandle,
+    }
+  })
 }
 
 function toCanvasEdge(edge: Edge): CanvasEdge {

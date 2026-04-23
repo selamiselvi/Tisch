@@ -481,25 +481,8 @@ a {
 .project-detail-header {
   align-items: center;
   display: flex;
-  gap: 6px;
   height: 28px;
   width: 100%;
-}
-
-.project-detail-toggle {
-  align-items: center;
-  background: transparent;
-  border-radius: 6px;
-  color: var(--color-text);
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 28px;
-  justify-content: center;
-  width: 28px;
-}
-
-.project-detail-toggle:hover {
-  background: var(--color-bg-muted);
 }
 
 .sidebar-title-label {
@@ -722,6 +705,82 @@ img.category-icon {
   background: var(--color-bg-muted);
 }
 
+.project-dialog-overlay {
+  align-items: center;
+  background: rgb(28 25 23 / 0.34);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 100;
+}
+
+.project-dialog {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 30px 70px rgb(0 0 0 / 0.26);
+  display: grid;
+  gap: 12px;
+  max-width: 420px;
+  padding: 18px;
+  width: min(420px, 100%);
+}
+
+.project-dialog label {
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.project-dialog input {
+  background: var(--color-bg-muted);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--color-text);
+  font-size: 16px;
+  height: 42px;
+  outline: none;
+  padding: 0 12px;
+  width: 100%;
+}
+
+.project-dialog input:focus {
+  background: var(--color-bg);
+  border-color: var(--color-border-strong);
+}
+
+.project-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.project-dialog-actions button {
+  border-radius: 7px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  height: 32px;
+  padding: 0 12px;
+}
+
+.project-dialog-actions button:hover:not(:disabled) {
+  background: var(--color-bg-muted);
+  color: var(--color-text);
+}
+
+.project-dialog-actions button[type="submit"] {
+  background: var(--color-text);
+  color: var(--color-text-inverse);
+}
+
+.project-dialog-actions button[type="submit"]:disabled {
+  background: var(--color-bg-emphasis);
+  color: var(--color-text-soft);
+  opacity: 1;
+}
+
 /* ------------------------------------------------------------------ */
 /* Workspace (right of sidebar)                                        */
 /* ------------------------------------------------------------------ */
@@ -792,6 +851,14 @@ img.category-icon {
 
 .canvas-action-button:hover {
   background: var(--color-bg-muted);
+}
+
+.canvas-action-button.danger {
+  color: var(--color-danger);
+}
+
+.canvas-action-button.danger:hover {
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
 }
 
 /* Zoom controls */
