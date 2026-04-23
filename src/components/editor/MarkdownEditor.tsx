@@ -14,6 +14,7 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  Image as ImageIcon,
   Italic,
   Link2,
   List,
@@ -33,6 +34,9 @@ interface MarkdownEditorProps {
   content: string
   itemId: string
   mode: MarkdownMode
+  onPickImage?: () => Promise<string | null>
+  normalizeImageSrc?: (src: string) => string
+  resolveImageSrc?: (src: string) => string | null
   onChange: (content: string) => void
   onModeChange: (mode: MarkdownMode) => void
 }
@@ -50,8 +54,27 @@ function cleanMarkdown(markdown: string) {
   return markdown.replace(/&nbsp;|&#160;/g, ' ').replace(/\n{3,}$/g, '\n\n')
 }
 
-function getMarkdown(editor: TiptapEditor) {
-  return cleanMarkdown(editor.getMarkdown())
+function transformMarkdownImageUrls(
+  markdown: string,
+  transform: (src: string) => string,
+) {
+  return markdown.replace(
+    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+    (match, alt: string, rawSrc: string) => {
+      const nextSrc = transform(rawSrc)
+      return nextSrc === rawSrc ? match : `![${alt}](${nextSrc})`
+    },
+  )
+}
+
+function getMarkdown(
+  editor: TiptapEditor,
+  normalizeImageSrc?: (src: string) => string,
+) {
+  const markdown = cleanMarkdown(editor.getMarkdown())
+  return normalizeImageSrc
+    ? transformMarkdownImageUrls(markdown, normalizeImageSrc)
+    : markdown
 }
 
 function insertLink(editor: TiptapEditor) {
@@ -105,10 +128,14 @@ function Divider() {
 function FormatBar({
   editor,
   mode,
+  onPickImage,
+  resolveImageSrc,
   onModeChange,
 }: {
   editor: TiptapEditor | null
   mode: MarkdownMode
+  onPickImage?: () => Promise<string | null>
+  resolveImageSrc?: (src: string) => string | null
   onModeChange: (mode: MarkdownMode) => void
 }) {
   const isSource = mode === 'source'
@@ -259,6 +286,26 @@ function FormatBar({
       >
         <Table2 size={16} />
       </ToolbarButton>
+      <ToolbarButton
+        disabled={disabled || !onPickImage}
+        label="Bild"
+        onClick={async () => {
+          if (!editor || !onPickImage) {
+            return
+          }
+          const imagePath = await onPickImage()
+          if (!imagePath) {
+            return
+          }
+          editor
+            .chain()
+            .focus()
+            .setImage({ src: resolveImageSrc?.(imagePath) ?? imagePath })
+            .run()
+        }}
+      >
+        <ImageIcon size={16} />
+      </ToolbarButton>
     </div>
   )
 }
@@ -267,11 +314,24 @@ export function MarkdownEditor({
   content,
   itemId,
   mode,
+  onPickImage,
+  normalizeImageSrc,
+  resolveImageSrc,
   onChange,
   onModeChange,
 }: MarkdownEditorProps) {
   const lastEmitted = useRef(content)
   const [toolbarVersion, setToolbarVersion] = useState(0)
+  const editorContent = useMemo(
+    () =>
+      resolveImageSrc
+        ? transformMarkdownImageUrls(
+            content,
+            (src) => resolveImageSrc(src) ?? src,
+          )
+        : content,
+    [content, resolveImageSrc],
+  )
   const extensions = useMemo(
     () => [
       StarterKit.configure({
@@ -311,7 +371,7 @@ export function MarkdownEditor({
   )
 
   const editor: TiptapEditor | null = useEditor({
-    content,
+    content: editorContent,
     contentType: 'markdown',
     extensions,
     editorProps: {
@@ -336,7 +396,7 @@ export function MarkdownEditor({
     onSelectionUpdate: () => setToolbarVersion((version) => version + 1),
     onTransaction: () => setToolbarVersion((version) => version + 1),
     onUpdate: ({ editor: updatedEditor }) => {
-      const markdown = getMarkdown(updatedEditor)
+      const markdown = getMarkdown(updatedEditor, normalizeImageSrc)
       lastEmitted.current = markdown
       onChange(markdown)
     },
@@ -347,19 +407,57 @@ export function MarkdownEditor({
       return
     }
 
-    const current = getMarkdown(editor)
+    const current = getMarkdown(editor, normalizeImageSrc)
     if (current !== content) {
-      editor.commands.setContent(content || '', {
+      editor.commands.setContent(editorContent || '', {
         contentType: 'markdown',
         emitUpdate: false,
       })
       lastEmitted.current = content
     }
-  }, [content, editor, itemId, mode])
+  }, [content, editor, editorContent, itemId, mode, normalizeImageSrc])
+
+  useEffect(() => {
+    if (!editor || mode !== 'write' || !resolveImageSrc) {
+      return
+    }
+
+    let changed = false
+    const transaction = editor.state.tr
+
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name !== 'image') {
+        return
+      }
+
+      const currentSrc = String(node.attrs.src ?? '')
+      const stableSrc = normalizeImageSrc?.(currentSrc) ?? currentSrc
+      const resolvedSrc = resolveImageSrc(stableSrc) ?? stableSrc
+      if (resolvedSrc === currentSrc) {
+        return
+      }
+
+      changed = true
+      transaction.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        src: resolvedSrc,
+      })
+    })
+
+    if (changed) {
+      editor.view.dispatch(transaction)
+    }
+  }, [editor, mode, normalizeImageSrc, resolveImageSrc])
 
   return (
     <div className="markdown-editor" data-toolbar-version={toolbarVersion}>
-      <FormatBar editor={editor} mode={mode} onModeChange={onModeChange} />
+      <FormatBar
+        editor={editor}
+        mode={mode}
+        onPickImage={onPickImage}
+        resolveImageSrc={resolveImageSrc}
+        onModeChange={onModeChange}
+      />
 
       {mode === 'source' ? (
         <textarea

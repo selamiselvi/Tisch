@@ -7,6 +7,7 @@ declare global {
       loadWorkspace: () => Promise<PlannerData | null>
       saveWorkspace: (data: PlannerData) => Promise<PlannerData>
       pickImage: () => Promise<string | null>
+      onWorkspaceChanged?: (callback: () => void) => () => void
     }
   }
 }

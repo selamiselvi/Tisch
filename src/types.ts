@@ -1,6 +1,6 @@
 export type ProjectId = string
 
-export type ViewMode = 'page' | 'canvas' | 'board'
+export type ViewMode = 'page' | 'canvas' | 'board' | 'settings'
 
 export type ItemKind = 'script'
 

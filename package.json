@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "main": "electron/main.cjs",
+  "bin": {
+    "tisch": "bin/tisch.cjs"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "start": "npm run electron:dev",

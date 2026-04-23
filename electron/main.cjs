@@ -1,9 +1,34 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require('electron')
+const {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  protocol,
+} = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
+const workspaceStore = require('../lib/workspace-store.cjs')
 
 const isDev = !app.isPackaged
 const legacyWorkspaceDir = path.join(process.cwd(), 'workspace')
+let workspaceWatcher = null
+let workspaceWatchTimer = null
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'tisch-asset',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+])
+
+app.setName('Tisch')
 
 function getWorkspaceDir() {
   return (
@@ -13,34 +38,81 @@ function getWorkspaceDir() {
 }
 
 function getPlannerPath() {
-  return path.join(getWorkspaceDir(), 'planner.json')
-}
-
-function getPagesDir() {
-  return path.join(getWorkspaceDir(), 'pages')
-}
-
-function getImagesDir() {
-  return path.join(getWorkspaceDir(), 'images')
+  return workspaceStore.getPlannerPath(getWorkspaceDir())
 }
 
 function getWindowIconPath() {
   return isDev
-    ? path.join(process.cwd(), 'public', 'tisch-mark.svg')
-    : path.join(__dirname, '..', 'dist', 'tisch-mark.svg')
+    ? path.join(process.cwd(), 'public', 'tisch-mark.png')
+    : path.join(__dirname, '..', 'dist', 'tisch-mark.png')
+}
+
+function getAppIcon() {
+  return nativeImage.createFromPath(getWindowIconPath())
 }
 
 function ensureWorkspace() {
-  fs.mkdirSync(getPagesDir(), { recursive: true })
+  workspaceStore.ensureWorkspace(getWorkspaceDir())
 }
 
-function sanitizeFileStem(value) {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '') || 'image'
-  )
+function getMimeType(filePath) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.avif':
+      return 'image/avif'
+    case '.gif':
+      return 'image/gif'
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.png':
+      return 'image/png'
+    case '.svg':
+      return 'image/svg+xml'
+    case '.webp':
+      return 'image/webp'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
+function resolveWorkspaceAsset(requestUrl) {
+  const url = new URL(requestUrl)
+  if (url.hostname !== 'workspace') {
+    return null
+  }
+
+  const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
+  if (!relativePath) {
+    return null
+  }
+
+  const workspaceDir = path.resolve(getWorkspaceDir())
+  const assetPath = path.resolve(workspaceDir, relativePath)
+  const relativeToWorkspace = path.relative(workspaceDir, assetPath)
+  if (
+    relativeToWorkspace.startsWith('..') ||
+    path.isAbsolute(relativeToWorkspace)
+  ) {
+    return null
+  }
+
+  return assetPath
+}
+
+function registerWorkspaceAssetProtocol() {
+  protocol.handle('tisch-asset', async (request) => {
+    const assetPath = resolveWorkspaceAsset(request.url)
+    if (!assetPath || !fs.existsSync(assetPath)) {
+      return new Response('Not found', { status: 404 })
+    }
+
+    const body = fs.readFileSync(assetPath)
+    return new Response(body, {
+      headers: {
+        'content-type': getMimeType(assetPath),
+      },
+    })
+  })
 }
 
 function hasWorkspaceData(dirPath) {
@@ -65,94 +137,71 @@ function migrateLegacyWorkspace() {
   })
 }
 
-function readJson(filePath) {
-  if (!fs.existsSync(filePath)) {
-    return null
-  }
-
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'))
-}
-
-function readItemContent(item) {
-  if (!item.contentPath) {
-    return ''
-  }
-
-  const fullPath = path.join(getWorkspaceDir(), item.contentPath)
-  if (!fs.existsSync(fullPath)) {
-    return ''
-  }
-
-  return fs.readFileSync(fullPath, 'utf8')
-}
-
-function writeItemContent(item) {
-  if (!item.contentPath) {
-    return
-  }
-
-  const fullPath = path.join(getWorkspaceDir(), item.contentPath)
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true })
-  fs.writeFileSync(fullPath, item.content || '', 'utf8')
-}
-
 function loadWorkspace() {
-  ensureWorkspace()
-  const data = readJson(getPlannerPath())
-
-  if (!data) {
-    return null
-  }
-
-  return {
-    ...data,
-    items: (data.items || []).map((item) => ({
-      ...item,
-      content: readItemContent(item),
-    })),
-  }
+  return workspaceStore.loadWorkspace(getWorkspaceDir())
 }
 
 function saveWorkspace(data) {
-  ensureWorkspace()
-  const now = new Date().toISOString()
-  const items = (data.items || []).map((item) => {
-    writeItemContent(item)
-    const { content, ...metadata } = item
-    return metadata
-  })
-
-  const fileData = {
-    ...data,
-    items,
-    updatedAt: now,
-  }
-
-  fs.writeFileSync(
-    getPlannerPath(),
-    `${JSON.stringify(fileData, null, 2)}\n`,
-    'utf8',
+  return workspaceStore.withWorkspaceLock(getWorkspaceDir(), () =>
+    workspaceStore.saveWorkspace(getWorkspaceDir(), data),
   )
-
-  return {
-    ...fileData,
-    items: data.items || [],
-  }
 }
 
 function importImage(sourcePath) {
+  return workspaceStore.importImage(getWorkspaceDir(), sourcePath)
+}
+
+function notifyWorkspaceChanged() {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('planner:workspaceChanged')
+  }
+}
+
+function scheduleWorkspaceChanged() {
+  if (workspaceWatchTimer) {
+    clearTimeout(workspaceWatchTimer)
+  }
+
+  workspaceWatchTimer = setTimeout(() => {
+    workspaceWatchTimer = null
+    notifyWorkspaceChanged()
+  }, 120)
+}
+
+function watchWorkspace() {
   ensureWorkspace()
-  fs.mkdirSync(getImagesDir(), { recursive: true })
 
-  const extension = path.extname(sourcePath) || '.png'
-  const stem = sanitizeFileStem(path.basename(sourcePath, extension))
-  const fileName = `${stem}-${Date.now()}${extension.toLowerCase()}`
-  const relativePath = path.posix.join('images', fileName)
-  const targetPath = path.join(getWorkspaceDir(), relativePath)
+  if (workspaceWatcher) {
+    workspaceWatcher.close()
+  }
 
-  fs.copyFileSync(sourcePath, targetPath)
+  try {
+    workspaceWatcher = fs.watch(
+      getWorkspaceDir(),
+      { recursive: true },
+      (_eventType, fileName) => {
+        if (!fileName) {
+          scheduleWorkspaceChanged()
+          return
+        }
 
-  return relativePath
+        const normalized = String(fileName).replace(/\\/g, '/')
+        if (
+          normalized === 'planner.json' ||
+          normalized.startsWith('pages/') ||
+          normalized.startsWith('images/')
+        ) {
+          scheduleWorkspaceChanged()
+        }
+      },
+    )
+  } catch {
+    workspaceWatcher = fs.watch(getWorkspaceDir(), (_eventType, fileName) => {
+      if (!fileName || String(fileName) === 'planner.json') {
+        scheduleWorkspaceChanged()
+      }
+    })
+  }
 }
 
 async function pickImage() {
@@ -183,7 +232,7 @@ function createWindow() {
     minHeight: 760,
     title: 'Tisch',
     backgroundColor: '#f7f7f5',
-    icon: nativeImage.createFromPath(getWindowIconPath()),
+    icon: getAppIcon(),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
@@ -203,6 +252,12 @@ function createWindow() {
 
 app.whenReady().then(() => {
   migrateLegacyWorkspace()
+  registerWorkspaceAssetProtocol()
+  watchWorkspace()
+
+  if (process.platform === 'darwin') {
+    app.dock.setIcon(getAppIcon())
+  }
 
   ipcMain.handle('planner:getWorkspacePath', () => getWorkspaceDir())
   ipcMain.handle('planner:loadWorkspace', () => loadWorkspace())

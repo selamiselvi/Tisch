@@ -39,6 +39,7 @@ npm run dev
 npm run build
 npm run lint
 npm run electron:preview
+npm exec tisch -- workspace path
 ```
 
 ## Lokale Daten
@@ -68,14 +69,42 @@ Fuer Entwicklung oder bewusste Dateiablaeufe kann der Speicherort mit `PLANNER_W
 ## KI-freundliche API
 
 Die UI spricht nicht direkt mit Dateien. Sie nutzt `src/lib/plannerApi.ts`.
+Electron und das lokale CLI teilen sich die Speicherlogik in
+`lib/workspace-store.cjs`.
 
 In Electron stellt `electron/preload.cjs` diese Funktionen bereit:
 
 - `window.planner.getWorkspacePath()`
 - `window.planner.loadWorkspace()`
 - `window.planner.saveWorkspace(data)`
+- `window.planner.onWorkspaceChanged(callback)`
 
-Dadurch koennen Codex und andere lokale KI-Agenten die App ueber dieselbe Datenstruktur manipulieren wie die UI.
+Dadurch koennen Codex und andere lokale KI-Agenten die App ueber dieselbe
+Datenstruktur manipulieren wie die UI. Wenn die App geoeffnet ist, erkennt sie
+Workspace-Aenderungen und laedt externe Agent-/CLI-Aenderungen neu.
+
+### Lokales CLI
+
+Das Agent-freundliche CLI heisst `tisch`:
+
+```bash
+npm exec tisch -- workspace init
+npm exec tisch -- project list
+npm exec tisch -- project create --name "Short-form"
+npm exec tisch -- canvas create --project "Short-form" --title "Videoidee"
+npm exec tisch -- canvas add-node --canvas "Videoidee" --title "Hook" --body "..."
+npm exec tisch -- canvas connect --canvas "Videoidee" --from "Hook" --to "CTA"
+```
+
+In einer installierten Distribution kann dasselbe CLI spaeter als `tisch ...`
+verlinkt werden. `TISCH_WORKSPACE_DIR=/pfad/zum/workspace` ueberschreibt den
+Standardpfad; `PLANNER_WORKSPACE_DIR` bleibt fuer Entwicklung kompatibel.
+
+### Codex Skill
+
+Ein erster wiederverwendbarer Codex-Skill liegt unter `skills/tisch`. Der Skill
+weist Agenten an, Tisch ueber das CLI zu bedienen und definiert Standards fuer
+Skripte, Short-form-Canvas-Strukturen, B-Roll-Nodes und Verbindungen.
 
 ## Datenmodell
 

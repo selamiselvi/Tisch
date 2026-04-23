@@ -28,14 +28,22 @@ import { nanoid } from 'nanoid'
 import {
   ArrowUpRight,
   ArrowLeftRight,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   FileText,
+  Languages,
   Minus,
+  Monitor,
+  Moon,
+  Palette,
   Plus,
   RefreshCw,
+  Settings,
+  Sun,
   Trash2,
+  Type,
   X,
 } from 'lucide-react'
 import {
@@ -68,6 +76,12 @@ import './App.css'
 type PageMode = MarkdownMode
 type CategoryId = 'canvas' | 'board' | 'skripte'
 type CanvasEdgeStyle = 'bezier' | 'smoothstep' | 'straight'
+type AppTheme = 'light' | 'dark'
+type AppLanguage = 'de' | 'en'
+type SettingsSection = 'appearance' | 'language' | 'agent'
+type EditorFontChoice = 'system' | 'serif' | 'mono'
+type WorkspaceView = Exclude<ViewMode, 'settings'>
+type ImageResolver = (imagePath: string | undefined) => string | null
 type SidebarTargetKind = 'project' | 'canvas' | 'board' | 'script'
 type SidebarMenuState = {
   kind: SidebarTargetKind
@@ -81,6 +95,66 @@ type SidebarIconComponent = React.ComponentType<{
   'aria-hidden'?: boolean
 }>
 
+const sidebarWidthStorageKey = 'tisch.sidebarWidth'
+const sidebarProjectsHeightStorageKey = 'tisch.sidebarProjectsHeight'
+const appThemeStorageKey = 'tisch.appTheme'
+const appLanguageStorageKey = 'tisch.appLanguage'
+const editorFontStorageKey = 'tisch.editorFont'
+const editorFontSizeStorageKey = 'tisch.editorFontSize'
+const defaultSidebarWidth = 236
+const defaultSidebarProjectsHeight = 202
+const minSidebarWidth = 200
+const maxSidebarWidth = 380
+const minSidebarProjectsHeight = 142
+const defaultEditorFontSize = 16
+
+const editorFontFamilies: Record<EditorFontChoice, string> = {
+  system:
+    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  serif: 'Georgia, "Times New Roman", serif',
+  mono:
+    '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function getMaxSidebarProjectsHeight() {
+  if (typeof window === 'undefined') {
+    return 420
+  }
+
+  return Math.max(minSidebarProjectsHeight, Math.min(420, window.innerHeight - 330))
+}
+
+function readStoredLayoutNumber(
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+) {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+
+  const stored = Number(window.localStorage.getItem(key))
+  return Number.isFinite(stored) ? clamp(stored, min, max) : fallback
+}
+
+function readStoredChoice<T extends string>(
+  key: string,
+  fallback: T,
+  allowed: readonly T[],
+) {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+
+  const stored = window.localStorage.getItem(key)
+  return stored && allowed.includes(stored as T) ? (stored as T) : fallback
+}
+
 type CanvasFlowNodeData = {
   itemId: string
   title: string
@@ -93,10 +167,24 @@ type CanvasFlowNodeData = {
     selectionStart: number,
     selectionEnd: number,
   ) => Promise<number | null>
+  resolveImageSrc: ImageResolver
   onAutoFocusHandled: (itemId: string) => void
   onResize: (itemId: string, width: number, height: number) => void
   onDelete: (itemId: string) => void
 }
+
+type CanvasConnectionHandle = {
+  id: string
+  position: Position
+  label: string
+}
+
+const canvasConnectionHandles: CanvasConnectionHandle[] = [
+  { id: 'top', position: Position.Top, label: 'Oben' },
+  { id: 'right', position: Position.Right, label: 'Rechts' },
+  { id: 'bottom', position: Position.Bottom, label: 'Unten' },
+  { id: 'left', position: Position.Left, label: 'Links' },
+]
 
 const slugify = (value: string) =>
   value
@@ -128,8 +216,8 @@ function splitItemContent(content: string) {
     return { title: '', body: '' }
   }
 
-  const firstMeaningfulLine = lines[firstMeaningfulIndex].trim()
-  const title = firstMeaningfulLine.replace(/^#{1,6}\s+/, '').trim()
+  const firstMeaningfulLine = lines[firstMeaningfulIndex].trimStart()
+  const title = firstMeaningfulLine.replace(/^#{1,6}\s+/, '')
 
   let bodyLines = lines.slice(firstMeaningfulIndex + 1)
   if (/^#{1,6}\s+/.test(firstMeaningfulLine) && bodyLines[0]?.trim() === '') {
@@ -143,14 +231,22 @@ function splitItemContent(content: string) {
 }
 
 function composeItemContent(title: string, body: string) {
-  const nextTitle = title.trim()
+  const nextTitle = title.replace(/^\s+/, '')
   const nextBody = normalizeLineEndings(body).replace(/^\n+/, '')
 
-  if (!nextTitle) {
+  if (!nextTitle.trim()) {
     return nextBody
   }
 
   return nextBody ? `# ${nextTitle}\n\n${nextBody}` : `# ${nextTitle}`
+}
+
+function isCanvasConnectionAllowed(
+  connection: Pick<Connection, 'source' | 'target'>,
+) {
+  return Boolean(
+    connection.source && connection.target && connection.source !== connection.target,
+  )
 }
 
 function deriveItemFieldsFromContent(item: Item, content: string) {
@@ -365,15 +461,128 @@ function App() {
   const [rightOpen, setRightOpen] = useState(false)
   const [canvasEdgeStyle, setCanvasEdgeStyle] = useState<CanvasEdgeStyle>('bezier')
   const [hideDone, setHideDone] = useState(false)
+  const [appTheme, setAppTheme] = useState<AppTheme>(() =>
+    readStoredChoice<AppTheme>(appThemeStorageKey, 'light', ['light', 'dark']),
+  )
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>(() =>
+    readStoredChoice<AppLanguage>(appLanguageStorageKey, 'de', ['de', 'en']),
+  )
+  const [editorFont, setEditorFont] = useState<EditorFontChoice>(() =>
+    readStoredChoice<EditorFontChoice>(editorFontStorageKey, 'system', [
+      'system',
+      'serif',
+      'mono',
+    ]),
+  )
+  const [editorFontSize, setEditorFontSize] = useState(() =>
+    readStoredLayoutNumber(
+      editorFontSizeStorageKey,
+      defaultEditorFontSize,
+      14,
+      19,
+    ),
+  )
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>('appearance')
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
+  const [settingsReturnView, setSettingsReturnView] =
+    useState<WorkspaceView>('canvas')
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    readStoredLayoutNumber(
+      sidebarWidthStorageKey,
+      defaultSidebarWidth,
+      minSidebarWidth,
+      maxSidebarWidth,
+    ),
+  )
+  const [sidebarProjectsHeight, setSidebarProjectsHeight] = useState(() =>
+    readStoredLayoutNumber(
+      sidebarProjectsHeightStorageKey,
+      defaultSidebarProjectsHeight,
+      minSidebarProjectsHeight,
+      getMaxSidebarProjectsHeight(),
+    ),
+  )
   const [sidebarMenu, setSidebarMenu] = useState<SidebarMenuState | null>(null)
   const [pendingCanvasFocusItemId, setPendingCanvasFocusItemId] = useState<
     string | null
   >(null)
   const [canvasUndoStack, setCanvasUndoStack] = useState<PlannerData[]>([])
   const [canvasRedoStack, setCanvasRedoStack] = useState<PlannerData[]>([])
+  const settingsLauncherRef = useRef<HTMLDivElement | null>(null)
   const dataRef = useRef<PlannerData | null>(null)
   const saveVersion = useRef(0)
   const saveTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    window.localStorage.setItem(sidebarWidthStorageKey, String(sidebarWidth))
+  }, [sidebarWidth])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = appTheme
+    window.localStorage.setItem(appThemeStorageKey, appTheme)
+  }, [appTheme])
+
+  useEffect(() => {
+    window.localStorage.setItem(appLanguageStorageKey, appLanguage)
+  }, [appLanguage])
+
+  useEffect(() => {
+    window.localStorage.setItem(editorFontStorageKey, editorFont)
+  }, [editorFont])
+
+  useEffect(() => {
+    window.localStorage.setItem(editorFontSizeStorageKey, String(editorFontSize))
+  }, [editorFontSize])
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      sidebarProjectsHeightStorageKey,
+      String(sidebarProjectsHeight),
+    )
+  }, [sidebarProjectsHeight])
+
+  useEffect(() => {
+    function clampLayoutToViewport() {
+      setSidebarProjectsHeight((height) =>
+        clamp(height, minSidebarProjectsHeight, getMaxSidebarProjectsHeight()),
+      )
+    }
+
+    window.addEventListener('resize', clampLayoutToViewport)
+    return () => window.removeEventListener('resize', clampLayoutToViewport)
+  }, [])
+
+  useEffect(() => {
+    if (!settingsMenuOpen) {
+      return
+    }
+
+    function closeSettingsMenu(event: PointerEvent) {
+      if (
+        settingsLauncherRef.current &&
+        event.target instanceof Node &&
+        settingsLauncherRef.current.contains(event.target)
+      ) {
+        return
+      }
+
+      setSettingsMenuOpen(false)
+    }
+
+    function closeSettingsMenuWithKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setSettingsMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', closeSettingsMenu)
+    window.addEventListener('keydown', closeSettingsMenuWithKey)
+    return () => {
+      window.removeEventListener('pointerdown', closeSettingsMenu)
+      window.removeEventListener('keydown', closeSettingsMenuWithKey)
+    }
+  }, [settingsMenuOpen])
 
   useEffect(() => {
     void Promise.all([loadPlanner(), getWorkspacePath()]).then(
@@ -396,6 +605,65 @@ function App() {
       },
     )
   }, [])
+
+  useEffect(() => {
+    if (!window.planner?.onWorkspaceChanged) {
+      return
+    }
+
+    let reloadTimer: number | null = null
+
+    const reloadWorkspace = () => {
+      reloadTimer = null
+      if (saveTimer.current) {
+        reloadTimer = window.setTimeout(reloadWorkspace, 250)
+        return
+      }
+
+      void loadPlanner().then((planner) => {
+        dataRef.current = planner
+        setData(planner)
+
+        const nextProjectId =
+          activeProjectId &&
+          planner.projects.some((project) => project.id === activeProjectId)
+            ? activeProjectId
+            : planner.projects[0]?.id ?? null
+        const nextCanvasId =
+          activeCanvasId &&
+          planner.canvases.some((canvas) => canvas.id === activeCanvasId)
+            ? activeCanvasId
+            : planner.canvases.find(
+                (canvas) => canvas.projectId === nextProjectId,
+              )?.id ?? null
+        const nextBoardId =
+          activeBoardId &&
+          planner.boards.some((board) => board.id === activeBoardId)
+            ? activeBoardId
+            : planner.boards.find((board) => board.projectId === nextProjectId)
+                ?.id ?? null
+
+        setActiveProjectId(nextProjectId)
+        setActiveCanvasId(nextCanvasId)
+        setActiveBoardId(nextBoardId)
+      })
+    }
+
+    const unsubscribe = window.planner.onWorkspaceChanged(() => {
+      if (reloadTimer) {
+        window.clearTimeout(reloadTimer)
+      }
+
+      reloadTimer = window.setTimeout(reloadWorkspace, 180)
+    })
+
+    return () => {
+      if (reloadTimer) {
+        window.clearTimeout(reloadTimer)
+      }
+      unsubscribe()
+    }
+  }, [activeBoardId, activeCanvasId, activeProjectId])
 
   useEffect(() => {
     if (!sidebarMenu) {
@@ -469,6 +737,10 @@ function App() {
         activeItem &&
         (link.fromItemId === activeItem.id || link.toItemId === activeItem.id),
     ) ?? []
+  const resolveWorkspaceImage = useMemo<ImageResolver>(
+    () => (imagePath) => resolveImageUrl(imagePath, workspacePath),
+    [workspacePath],
+  )
 
   function commit(
     nextOrUpdater: PlannerData | ((current: PlannerData) => PlannerData),
@@ -495,6 +767,7 @@ function App() {
 
     const version = ++saveVersion.current
     saveTimer.current = window.setTimeout(() => {
+      saveTimer.current = null
       void savePlanner(next).then((saved) => {
         if (saveVersion.current !== version) {
           return
@@ -629,6 +902,10 @@ function App() {
     setActiveCanvasId(canvas?.id ?? null)
     setActiveBoardId(board?.id ?? null)
     setActiveItemId(null)
+    setSettingsMenuOpen(false)
+    if (view === 'settings') {
+      setView('canvas')
+    }
   }
 
   function updateProject(
@@ -667,6 +944,21 @@ function App() {
   function openScript(itemId: string) {
     setActiveItemId(itemId)
     setView('page')
+  }
+
+  function openSettings(section: SettingsSection = 'appearance') {
+    setSettingsSection(section)
+    setSettingsMenuOpen(false)
+    setRightOpen(false)
+    if (view !== 'settings') {
+      setSettingsReturnView(view)
+    }
+    setView('settings')
+  }
+
+  function closeSettings() {
+    setSettingsMenuOpen(false)
+    setView(settingsReturnView)
   }
 
   function openSidebarMenu(
@@ -1303,8 +1595,7 @@ function App() {
       return null
     }
 
-    const fullUrl = resolveImageUrl(imagePath, workspacePath) ?? imagePath
-    const snippet = `\n![Bild](${fullUrl})\n`
+    const snippet = `\n![Bild](${imagePath})\n`
     const item = data?.items.find((entry) => entry.id === itemId)
     if (!item) {
       return null
@@ -1374,7 +1665,7 @@ function App() {
   }
 
   function onCanvasConnect(connection: Connection) {
-    if (!activeCanvas || !connection.source || !connection.target) {
+    if (!activeCanvas || !isCanvasConnectionAllowed(connection)) {
       return
     }
 
@@ -1389,7 +1680,7 @@ function App() {
   }
 
   function onCanvasReconnect(oldEdge: Edge, newConnection: Connection) {
-    if (!activeCanvas) {
+    if (!activeCanvas || !isCanvasConnectionAllowed(newConnection)) {
       return
     }
 
@@ -1423,6 +1714,68 @@ function App() {
     }
   }
 
+  function beginSidebarWidthResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = sidebarWidth
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    function onPointerMove(moveEvent: PointerEvent) {
+      setSidebarWidth(
+        clamp(
+          startWidth + moveEvent.clientX - startX,
+          minSidebarWidth,
+          maxSidebarWidth,
+        ),
+      )
+    }
+
+    function onPointerUp() {
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousUserSelect
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+    }
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+  }
+
+  function beginProjectListResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault()
+    const startY = event.clientY
+    const startHeight = sidebarProjectsHeight
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+
+    document.body.style.cursor = 'row-resize'
+    document.body.style.userSelect = 'none'
+
+    function onPointerMove(moveEvent: PointerEvent) {
+      setSidebarProjectsHeight(
+        clamp(
+          startHeight + moveEvent.clientY - startY,
+          minSidebarProjectsHeight,
+          getMaxSidebarProjectsHeight(),
+        ),
+      )
+    }
+
+    function onPointerUp() {
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousUserSelect
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+    }
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+  }
+
   if (!data) {
     return <main className="loading">Tisch wird geladen...</main>
   }
@@ -1430,6 +1783,13 @@ function App() {
   const projectItemsForSearch = activeProject
     ? data.items.filter((item) => item.projectId === activeProject.id)
     : []
+  const appLayoutStyle = {
+    '--sidebar-width': `${sidebarWidth}px`,
+    '--sidebar-projects-height': `${sidebarProjectsHeight}px`,
+    '--editor-font-family': editorFontFamilies[editorFont],
+    '--editor-base-font-size': `${editorFontSize}px`,
+  } as React.CSSProperties
+  const settingsCopy = getSettingsCopy(appLanguage)
 
   return (
     <main
@@ -1438,10 +1798,22 @@ function App() {
         `view-${view}`,
         rightOpen ? 'right-open' : 'right-closed',
       ].join(' ')}
+      style={appLayoutStyle}
     >
       <div className="titlebar-drag" />
 
-      <aside className="sidebar">
+      <aside
+        className={view === 'settings' ? 'sidebar settings-sidebar' : 'sidebar'}
+      >
+        {view === 'settings' ? (
+          <SettingsSidebar
+            activeSection={settingsSection}
+            appLanguage={appLanguage}
+            onBack={closeSettings}
+            onSectionChange={setSettingsSection}
+          />
+        ) : (
+          <>
         <div className="sidebar-brand-shell">
           <div className="sidebar-brand">
             <span className="brand-mark" aria-hidden>
@@ -1454,12 +1826,23 @@ function App() {
         <div className="sidebar-body">
           <section className="sidebar-section sidebar-projects">
             <div className="sidebar-heading sidebar-heading-with-icon">
-              <ProjectSidebarIcon
-                className="sidebar-heading-icon"
-                size={28}
-                aria-hidden
-              />
-              <span>Projekte</span>
+              <span className="sidebar-heading-main">
+                <ProjectSidebarIcon
+                  className="sidebar-heading-icon"
+                  size={28}
+                  aria-hidden
+                />
+                <span>Projekte</span>
+              </span>
+              <button
+                aria-label="Neues Projekt"
+                className="sidebar-heading-add"
+                onClick={addProject}
+                title="Neues Projekt"
+                type="button"
+              >
+                <Plus size={14} aria-hidden />
+              </button>
             </div>
             <div className="sidebar-section-scroll">
               <nav className="project-list" aria-label="Projekte">
@@ -1492,13 +1875,32 @@ function App() {
                     />
                   )
                 })}
-                <button className="project-row add-row" onClick={addProject}>
-                  <Plus size={14} aria-hidden />
-                  <span>Neues Projekt</span>
-                </button>
               </nav>
             </div>
           </section>
+
+          {activeProject && (
+            <div
+              aria-label="Projektliste Höhe anpassen"
+              aria-orientation="horizontal"
+              className="sidebar-horizontal-resizer"
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  setSidebarProjectsHeight((height) =>
+                    clamp(
+                      height + (event.key === 'ArrowDown' ? 12 : -12),
+                      minSidebarProjectsHeight,
+                      getMaxSidebarProjectsHeight(),
+                    ),
+                  )
+                }
+              }}
+              onPointerDown={beginProjectListResize}
+              role="separator"
+              tabIndex={0}
+            />
+          )}
 
           {activeProject && (
             <section className="sidebar-section project-detail">
@@ -1594,10 +1996,100 @@ function App() {
             </section>
           )}
         </div>
+
+        <div className="sidebar-settings-launcher" ref={settingsLauncherRef}>
+          {settingsMenuOpen && (
+            <div className="settings-dropup" role="menu">
+              <button
+                className="settings-dropup-row"
+                onClick={() => openSettings('appearance')}
+                role="menuitem"
+                type="button"
+              >
+                <Palette size={15} aria-hidden />
+                <span>{settingsCopy.appearance}</span>
+              </button>
+              <button
+                className="settings-dropup-row"
+                onClick={() => openSettings('language')}
+                role="menuitem"
+                type="button"
+              >
+                <Languages size={15} aria-hidden />
+                <span>{settingsCopy.language}</span>
+              </button>
+              <button
+                className="settings-dropup-row"
+                onClick={() => openSettings('agent')}
+                role="menuitem"
+                type="button"
+              >
+                <ArrowLeftRight size={15} aria-hidden />
+                <span>{settingsCopy.agent}</span>
+              </button>
+              <button
+                className="settings-dropup-row"
+                onClick={() => openSettings(settingsSection)}
+                role="menuitem"
+                type="button"
+              >
+                <Settings size={15} aria-hidden />
+                <span>{settingsCopy.title}</span>
+              </button>
+            </div>
+          )}
+          <button
+            className="sidebar-settings-button"
+            onClick={() => setSettingsMenuOpen((open) => !open)}
+            title={settingsCopy.title}
+            type="button"
+          >
+            <Settings size={16} aria-hidden />
+            <span>{settingsCopy.title}</span>
+          </button>
+        </div>
+          </>
+        )}
+
+        <div
+          aria-label="Sidebar-Breite anpassen"
+          aria-orientation="vertical"
+          className="sidebar-width-resizer"
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+              event.preventDefault()
+              setSidebarWidth((width) =>
+                clamp(
+                  width + (event.key === 'ArrowRight' ? 12 : -12),
+                  minSidebarWidth,
+                  maxSidebarWidth,
+                ),
+              )
+            }
+          }}
+          onPointerDown={beginSidebarWidthResize}
+          role="separator"
+          tabIndex={0}
+        />
       </aside>
 
       <section className="workspace">
-        {!activeProject && (
+        {view === 'settings' && (
+          <SettingsView
+            activeSection={settingsSection}
+            appLanguage={appLanguage}
+            appTheme={appTheme}
+            editorFont={editorFont}
+            editorFontSize={editorFontSize}
+            workspacePath={workspacePath}
+            onEditorFontChange={setEditorFont}
+            onEditorFontSizeChange={setEditorFontSize}
+            onLanguageChange={setAppLanguage}
+            onThemeChange={setAppTheme}
+          />
+        )}
+
+        {view !== 'settings' && !activeProject && (
           <EmptyView
             title="Kein Projekt"
             description="Lege zuerst ein Projekt an, damit du Canvas, Boards und Skripte organisieren kannst."
@@ -1606,24 +2098,28 @@ function App() {
           />
         )}
 
-        {activeProject && view === 'page' && activeItem && (
+        {view !== 'settings' && activeProject && view === 'page' && activeItem && (
           <PageView
             item={activeItem}
             pageMode={pageMode}
+            inspectorOpen={rightOpen}
             onModeChange={setPageMode}
+            onPickImage={pickImage}
+            resolveImageSrc={resolveWorkspaceImage}
+            normalizeImageSrc={normalizeWorkspaceImageSrc}
             onUpdate={(item) => updateItem(item.id, () => item)}
             onToggleInspector={() => setRightOpen((open) => !open)}
           />
         )}
 
-        {activeProject && view === 'page' && !activeItem && (
+        {view !== 'settings' && activeProject && view === 'page' && !activeItem && (
           <EmptyView
             title="Keine Seite ausgewählt"
             description="Öffne ein Skript aus der Seitenleiste."
           />
         )}
 
-        {activeProject && view === 'canvas' && activeCanvas && (
+        {view !== 'settings' && activeProject && view === 'canvas' && activeCanvas && (
           <ReactFlowProvider>
             <CanvasView
               canvas={activeCanvas}
@@ -1642,6 +2138,7 @@ function App() {
               }
               onUpdateNodeContent={updateCanvasItemContent}
               onInsertNodeImage={insertCanvasItemImage}
+              resolveImageSrc={resolveWorkspaceImage}
               onResizeNode={resizeCanvasNode}
               onDeleteNode={deleteCanvasItem}
               canUndo={canvasUndoStack.length > 0}
@@ -1658,7 +2155,7 @@ function App() {
           </ReactFlowProvider>
         )}
 
-        {activeProject && view === 'canvas' && !activeCanvas && (
+        {view !== 'settings' && activeProject && view === 'canvas' && !activeCanvas && (
           <EmptyView
             title="Kein Canvas"
             description="Lege in der Seitenleiste ein neues Canvas an."
@@ -1667,7 +2164,7 @@ function App() {
           />
         )}
 
-        {activeProject && view === 'board' && activeBoard && (
+        {view !== 'settings' && activeProject && view === 'board' && activeBoard && (
           <BoardView
             board={activeBoard}
             items={data.items}
@@ -1683,6 +2180,7 @@ function App() {
               setActiveItemId(itemId)
               setRightOpen(true)
             }}
+            resolveImageSrc={resolveWorkspaceImage}
             onUpdateItemContent={updateBoardItemContent}
             onMoveCard={moveCard}
             onAddColumn={addColumn}
@@ -1697,7 +2195,7 @@ function App() {
           />
         )}
 
-        {activeProject && view === 'board' && !activeBoard && (
+        {view !== 'settings' && activeProject && view === 'board' && !activeBoard && (
           <EmptyView
             title="Kein Board"
             description="Lege in der Seitenleiste ein neues Ideen Board an."
@@ -1707,8 +2205,12 @@ function App() {
         )}
       </section>
 
-      {rightOpen && activeProject && (
-        <aside className="right-pane">
+      {activeProject && view !== 'settings' && (
+        <aside
+          aria-hidden={!rightOpen}
+          className={rightOpen ? 'right-pane is-open' : 'right-pane is-closed'}
+          inert={rightOpen ? undefined : true}
+        >
           <div className="right-pane-header">
             <span className="right-pane-title">Inspector</span>
             <button
@@ -1877,14 +2379,26 @@ function CategorySection({
   const Chevron = expanded ? ChevronDown : ChevronRight
   return (
     <div className="category-block">
-      <button
-        className={expanded ? 'category-row active' : 'category-row'}
-        onClick={onToggle}
-      >
-        <Chevron className="category-chevron" size={13} aria-hidden />
-        <Icon className="category-icon" size={28} aria-hidden />
-        <span>{label}</span>
-      </button>
+      <div className={expanded ? 'category-row active' : 'category-row'}>
+        <button
+          className="category-toggle"
+          onClick={onToggle}
+          type="button"
+        >
+          <Chevron className="category-chevron" size={13} aria-hidden />
+          <Icon className="category-icon" size={28} aria-hidden />
+          <span>{label}</span>
+        </button>
+        <button
+          aria-label={addLabel}
+          className="category-add"
+          onClick={onAdd}
+          title={addLabel}
+          type="button"
+        >
+          <Plus size={14} aria-hidden />
+        </button>
+      </div>
 
       {expanded && (
         <div className="page-list">
@@ -1902,10 +2416,6 @@ function CategorySection({
               onRename={entry.onRename}
             />
           ))}
-          <button className="page-row add-row" onClick={onAdd}>
-            <Plus size={13} aria-hidden />
-            <span>{addLabel}</span>
-          </button>
         </div>
       )}
     </div>
@@ -1942,19 +2452,393 @@ function EmptyView({
 }
 
 /* ------------------------------------------------------------------ */
+/* Settings view                                                       */
+/* ------------------------------------------------------------------ */
+
+function getSettingsCopy(language: AppLanguage) {
+  if (language === 'en') {
+    return {
+      back: 'Back',
+      title: 'Settings',
+      appearance: 'Appearance',
+      language: 'Language',
+      agent: 'Agent access',
+      appearanceIntro:
+        'Adjust theme, canvas contrast, and writing typography for the app.',
+      theme: 'Theme',
+      themeDescription: 'Dark mode stays softly gray instead of black.',
+      light: 'Light',
+      dark: 'Dark',
+      editorFont: 'Editor font',
+      editorFontDescription:
+        'Applies to scripts, canvas notes, and board cards.',
+      system: 'System',
+      serif: 'Serif',
+      mono: 'Mono',
+      editorSize: 'Editor size',
+      editorSizeDescription: (size: number) => `${size}px base size`,
+      languageIntro:
+        'Choose the app language. New settings text responds immediately.',
+      appLanguage: 'App language',
+      appLanguageDescription:
+        'This setting is ready for the broader app translation pass.',
+      german: 'Deutsch',
+      english: 'English',
+      agentIntro:
+        'Local agents can use the Tisch CLI to create scripts, canvases, nodes, and connections.',
+      workspacePath: 'Workspace',
+      workspacePathDescription:
+        'The CLI writes to the same local workspace as this app.',
+      cliAccess: 'CLI command',
+      cliAccessDescription:
+        'Use this command from Codex or a terminal to verify access.',
+      skillAccess: 'Codex skill',
+      skillAccessDescription:
+        'The repo includes a reusable skill with Tisch workflow standards.',
+    }
+  }
+
+  return {
+    back: 'Zurueck',
+    title: 'Einstellungen',
+    appearance: 'Darstellung',
+    language: 'Sprache',
+    agent: 'Agent-Zugriff',
+    appearanceIntro:
+      'Passe Theme, Canvas-Kontrast und Schreibtypografie fuer die App an.',
+    theme: 'Theme',
+    themeDescription: 'Dark Mode bleibt weich grau statt schwarz.',
+    light: 'Hell',
+    dark: 'Dunkel',
+    editorFont: 'Editor-Schrift',
+    editorFontDescription:
+      'Wirkt auf Skripte, Canvas-Notizen und Board-Karten.',
+    system: 'System',
+    serif: 'Serif',
+    mono: 'Mono',
+    editorSize: 'Editor-Groesse',
+    editorSizeDescription: (size: number) => `${size}px Basisgroesse`,
+    languageIntro:
+      'Waehle die App-Sprache. Neue Einstellungstexte reagieren direkt.',
+    appLanguage: 'App-Sprache',
+    appLanguageDescription:
+      'Diese Einstellung ist bereit fuer die breitere Uebersetzung der App.',
+    german: 'Deutsch',
+    english: 'English',
+    agentIntro:
+      'Lokale Agenten koennen das Tisch-CLI nutzen, um Skripte, Canvases, Nodes und Verbindungen zu erstellen.',
+    workspacePath: 'Workspace',
+    workspacePathDescription:
+      'Das CLI schreibt in denselben lokalen Workspace wie diese App.',
+    cliAccess: 'CLI-Befehl',
+    cliAccessDescription:
+      'Nutze diesen Befehl in Codex oder im Terminal, um den Zugriff zu pruefen.',
+    skillAccess: 'Codex-Skill',
+    skillAccessDescription:
+      'Das Repository enthaelt einen wiederverwendbaren Skill mit Tisch-Workflow-Standards.',
+  }
+}
+
+function SettingsSidebar({
+  activeSection,
+  appLanguage,
+  onBack,
+  onSectionChange,
+}: {
+  activeSection: SettingsSection
+  appLanguage: AppLanguage
+  onBack: () => void
+  onSectionChange: (section: SettingsSection) => void
+}) {
+  const copy = getSettingsCopy(appLanguage)
+
+  return (
+    <>
+      <div className="settings-sidebar-header">
+        <button className="settings-back-button" onClick={onBack} type="button">
+          <ChevronLeft size={17} aria-hidden />
+          <span>{copy.back}</span>
+        </button>
+      </div>
+      <nav className="settings-sidebar-nav" aria-label={copy.title}>
+        <button
+          className={
+            activeSection === 'appearance'
+              ? 'settings-nav-row active'
+              : 'settings-nav-row'
+          }
+          onClick={() => onSectionChange('appearance')}
+          type="button"
+        >
+          <Palette size={16} aria-hidden />
+          <span>{copy.appearance}</span>
+        </button>
+        <button
+          className={
+            activeSection === 'language'
+              ? 'settings-nav-row active'
+              : 'settings-nav-row'
+          }
+          onClick={() => onSectionChange('language')}
+          type="button"
+        >
+          <Languages size={16} aria-hidden />
+          <span>{copy.language}</span>
+        </button>
+        <button
+          className={
+            activeSection === 'agent'
+              ? 'settings-nav-row active'
+              : 'settings-nav-row'
+          }
+          onClick={() => onSectionChange('agent')}
+          type="button"
+        >
+          <ArrowLeftRight size={16} aria-hidden />
+          <span>{copy.agent}</span>
+        </button>
+      </nav>
+    </>
+  )
+}
+
+function SettingsView({
+  activeSection,
+  appLanguage,
+  appTheme,
+  editorFont,
+  editorFontSize,
+  workspacePath,
+  onEditorFontChange,
+  onEditorFontSizeChange,
+  onLanguageChange,
+  onThemeChange,
+}: {
+  activeSection: SettingsSection
+  appLanguage: AppLanguage
+  appTheme: AppTheme
+  editorFont: EditorFontChoice
+  editorFontSize: number
+  workspacePath: string
+  onEditorFontChange: (font: EditorFontChoice) => void
+  onEditorFontSizeChange: (size: number) => void
+  onLanguageChange: (language: AppLanguage) => void
+  onThemeChange: (theme: AppTheme) => void
+}) {
+  const copy = getSettingsCopy(appLanguage)
+
+  return (
+    <section className="settings-view">
+      <header className="settings-header">
+        <span className="eyebrow">Tisch</span>
+        <h1>{copy.title}</h1>
+      </header>
+
+      <div className="settings-layout">
+        <div className="settings-panel">
+          {activeSection === 'appearance' && (
+            <div className="settings-section">
+              <div>
+                <h2>{copy.appearance}</h2>
+                <p>{copy.appearanceIntro}</p>
+              </div>
+
+              <SettingGroup
+                title={copy.theme}
+                description={copy.themeDescription}
+              >
+                <div className="settings-card-grid">
+                  <SettingsChoiceCard
+                    active={appTheme === 'light'}
+                    icon={Sun}
+                    label={copy.light}
+                    onClick={() => onThemeChange('light')}
+                  />
+                  <SettingsChoiceCard
+                    active={appTheme === 'dark'}
+                    icon={Moon}
+                    label={copy.dark}
+                    onClick={() => onThemeChange('dark')}
+                  />
+                </div>
+              </SettingGroup>
+
+              <SettingGroup
+                title={copy.editorFont}
+                description={copy.editorFontDescription}
+              >
+                <div className="segmented-control">
+                  {(['system', 'serif', 'mono'] as const).map((font) => (
+                    <button
+                      className={editorFont === font ? 'active' : ''}
+                      key={font}
+                      onClick={() => onEditorFontChange(font)}
+                      type="button"
+                    >
+                      {font === 'system'
+                        ? copy.system
+                        : font === 'serif'
+                          ? copy.serif
+                          : copy.mono}
+                    </button>
+                  ))}
+                </div>
+              </SettingGroup>
+
+              <SettingGroup
+                title={copy.editorSize}
+                description={copy.editorSizeDescription(editorFontSize)}
+              >
+                <div className="settings-range-row">
+                  <Type size={16} aria-hidden />
+                  <input
+                    max={19}
+                    min={14}
+                    onChange={(event) =>
+                      onEditorFontSizeChange(Number(event.target.value))
+                    }
+                    type="range"
+                    value={editorFontSize}
+                  />
+                </div>
+              </SettingGroup>
+            </div>
+          )}
+
+          {activeSection === 'language' && (
+            <div className="settings-section">
+              <div>
+                <h2>{copy.language}</h2>
+                <p>{copy.languageIntro}</p>
+              </div>
+
+              <SettingGroup
+                title={copy.appLanguage}
+                description={copy.appLanguageDescription}
+              >
+                <div className="settings-card-grid">
+                  <SettingsChoiceCard
+                    active={appLanguage === 'de'}
+                    icon={Languages}
+                    label={copy.german}
+                    onClick={() => onLanguageChange('de')}
+                  />
+                  <SettingsChoiceCard
+                    active={appLanguage === 'en'}
+                    icon={Monitor}
+                    label={copy.english}
+                    onClick={() => onLanguageChange('en')}
+                  />
+                </div>
+              </SettingGroup>
+            </div>
+          )}
+
+          {activeSection === 'agent' && (
+            <div className="settings-section">
+              <div>
+                <h2>{copy.agent}</h2>
+                <p>{copy.agentIntro}</p>
+              </div>
+
+              <SettingGroup
+                title={copy.workspacePath}
+                description={copy.workspacePathDescription}
+              >
+                <code className="settings-code-line">
+                  {workspacePath || 'Workspace wird geladen'}
+                </code>
+              </SettingGroup>
+
+              <SettingGroup
+                title={copy.cliAccess}
+                description={copy.cliAccessDescription}
+              >
+                <code className="settings-code-line">
+                  npm exec tisch -- workspace init
+                </code>
+              </SettingGroup>
+
+              <SettingGroup
+                title={copy.skillAccess}
+                description={copy.skillAccessDescription}
+              >
+                <code className="settings-code-line">skills/tisch</code>
+              </SettingGroup>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SettingGroup({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="setting-group">
+      <div className="setting-group-copy">
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+      <div className="setting-group-control">{children}</div>
+    </section>
+  )
+}
+
+function SettingsChoiceCard({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean
+  icon: React.ComponentType<{ size?: number; 'aria-hidden'?: boolean }>
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      className={active ? 'settings-choice-card active' : 'settings-choice-card'}
+      onClick={onClick}
+      type="button"
+    >
+      <Icon size={18} aria-hidden />
+      <span>{label}</span>
+      {active && <Check size={15} aria-hidden />}
+    </button>
+  )
+}
+
+/* ------------------------------------------------------------------ */
 /* Page view                                                           */
 /* ------------------------------------------------------------------ */
 
 function PageView({
   item,
   pageMode,
+  inspectorOpen,
   onModeChange,
+  onPickImage,
+  normalizeImageSrc,
+  resolveImageSrc,
   onUpdate,
   onToggleInspector,
 }: {
   item: Item
   pageMode: PageMode
+  inspectorOpen: boolean
   onModeChange: (mode: PageMode) => void
+  onPickImage: () => Promise<string | null>
+  normalizeImageSrc: (src: string) => string
+  resolveImageSrc: ImageResolver
   onUpdate: (item: Item) => void
   onToggleInspector: () => void
 }) {
@@ -1969,21 +2853,19 @@ function PageView({
     <section className="page-view">
       <div className="page-header">
         <h1 className="page-title">{item.title}</h1>
-        <div className="page-actions">
-          <button
-            className="icon-button"
-            onClick={onToggleInspector}
-            title="Inspector"
-          >
-            <ArrowLeftRight size={15} />
-          </button>
-        </div>
       </div>
+      <InspectorToggleControl
+        inspectorOpen={inspectorOpen}
+        onToggleInspector={onToggleInspector}
+      />
 
       <MarkdownEditor
         content={item.content}
         itemId={item.id}
         mode={pageMode}
+        onPickImage={onPickImage}
+        normalizeImageSrc={normalizeImageSrc}
+        resolveImageSrc={resolveImageSrc}
         onChange={updateContent}
         onModeChange={onModeChange}
       />
@@ -1994,6 +2876,7 @@ function PageView({
 function deriveSummary(markdown: string, fallback: string) {
   return (
     markdown
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
       .split('\n')
       .map((line) =>
         line
@@ -2021,11 +2904,101 @@ function resolveImageUrl(
     return imagePath
   }
 
-  const normalizedPath = imagePath.startsWith('/')
-    ? imagePath
-    : `${workspacePath}/${imagePath}`
+  if (imagePath.startsWith('tisch-asset://')) {
+    return imagePath
+  }
 
-  return encodeURI(`file://${normalizedPath}`)
+  if (!workspacePath || workspacePath === 'Browser localStorage fallback') {
+    return imagePath
+  }
+
+  if (imagePath.startsWith('/')) {
+    return encodeURI(`file://${imagePath}`)
+  }
+
+  const normalizedPath = imagePath.replace(/^\/+/, '')
+
+  return `tisch-asset://workspace/${encodeURI(normalizedPath)}`
+}
+
+function normalizeWorkspaceImageSrc(src: string) {
+  if (src.startsWith('tisch-asset://workspace/')) {
+    return decodeURI(src.replace('tisch-asset://workspace/', ''))
+  }
+
+  return src
+}
+
+function extractMarkdownImages(markdown: string) {
+  const images: { alt: string; src: string }[] = []
+  const pattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(markdown)) !== null) {
+    images.push({ alt: match[1] || 'Bild', src: match[2] })
+  }
+
+  return images
+}
+
+function extractMarkdownImageMarkdown(markdown: string) {
+  const images: string[] = []
+  const pattern = /!\[[^\]]*\]\([^)\s]+(?:\s+"[^"]*")?\)/g
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(markdown)) !== null) {
+    images.push(match[0])
+  }
+
+  return images
+}
+
+function removeMarkdownImages(markdown: string) {
+  return markdown
+    .replace(/!\[[^\]]*\]\([^)\s]+(?:\s+"[^"]*")?\)/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\n+/, '')
+}
+
+function mergeVisibleBodyWithImages(visibleBody: string, previousBody: string) {
+  const images = extractMarkdownImageMarkdown(previousBody)
+  if (images.length === 0) {
+    return visibleBody
+  }
+
+  const nextBody = normalizeLineEndings(visibleBody)
+  return [nextBody, ...images].filter(Boolean).join('\n\n')
+}
+
+function MarkdownImageStrip({
+  images,
+  resolveImageSrc,
+  variant,
+}: {
+  images: { alt: string; src: string }[]
+  resolveImageSrc: ImageResolver
+  variant: 'card' | 'node'
+}) {
+  if (images.length === 0) {
+    return null
+  }
+
+  return (
+    <div className={`markdown-image-strip markdown-image-strip--${variant}`}>
+      {images.map((image, index) => {
+        const src = resolveImageSrc(image.src) ?? image.src
+        return (
+          <img
+            alt={image.alt}
+            draggable={false}
+            key={`${image.src}-${index}`}
+            src={src}
+          />
+        )
+      })}
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -2047,6 +3020,7 @@ function CanvasView({
   onCreateNodeAtPosition,
   onUpdateNodeContent,
   onInsertNodeImage,
+  resolveImageSrc,
   onResizeNode,
   onDeleteNode,
   canUndo,
@@ -2078,6 +3052,7 @@ function CanvasView({
     selectionStart: number,
     selectionEnd: number,
   ) => Promise<number | null>
+  resolveImageSrc: ImageResolver
   onResizeNode: (itemId: string, width: number, height: number) => void
   onDeleteNode: (itemId: string) => void
   canUndo: boolean
@@ -2100,6 +3075,7 @@ function CanvasView({
         onUpdateContent: onUpdateNodeContent,
         onOpenScript: onOpenNode,
         onInsertImage: onInsertNodeImage,
+        resolveImageSrc,
         pendingFocusItemId,
         onAutoFocusHandled: onCanvasItemFocusHandled,
         onResize: onResizeNode,
@@ -2113,6 +3089,7 @@ function CanvasView({
       onInsertNodeImage,
       onOpenNode,
       onResizeNode,
+      resolveImageSrc,
       onUpdateNodeContent,
       pendingFocusItemId,
     ],
@@ -2182,6 +3159,8 @@ function CanvasView({
           return
         }
 
+        event.preventDefault()
+        event.stopPropagation()
         onCreateNodeAtPosition(
           screenToFlowPosition({
             x: event.clientX,
@@ -2208,6 +3187,9 @@ function CanvasView({
         onConnect={onConnect}
         onReconnect={onReconnect}
         reconnectRadius={28}
+        connectionRadius={44}
+        connectionDragThreshold={4}
+        isValidConnection={isCanvasConnectionAllowed}
         defaultEdgeOptions={defaultEdgeOptions}
         connectionLineType={connectionLineType}
         connectionLineStyle={{ strokeWidth: 1.6 }}
@@ -2236,6 +3218,7 @@ function CanvasView({
         }}
         panOnDrag
         nodesDraggable
+        zoomOnDoubleClick={false}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#d7d9df" gap={24} />
@@ -2249,7 +3232,7 @@ function CanvasView({
         onUndo={onUndo}
         onRedo={onRedo}
       />
-      <CanvasAuxControls
+      <InspectorToggleControl
         inspectorOpen={inspectorOpen}
         onToggleInspector={onToggleInspector}
       />
@@ -2287,6 +3270,7 @@ function CanvasQuickActions({
         title="Objekt hinzufügen"
       >
         <Plus size={16} />
+        <span>Objekt</span>
       </button>
     </div>
   )
@@ -2328,7 +3312,7 @@ function CanvasZoomControls() {
   )
 }
 
-function CanvasAuxControls({
+function InspectorToggleControl({
   inspectorOpen,
   onToggleInspector,
 }: {
@@ -2336,9 +3320,13 @@ function CanvasAuxControls({
   onToggleInspector: () => void
 }) {
   return (
-    <div className="canvas-aux" role="group" aria-label="Ansicht">
+    <div className="inspector-toggle-control" role="group" aria-label="Ansicht">
       <button
-        className={inspectorOpen ? 'aux-button active' : 'aux-button'}
+        className={
+          inspectorOpen
+            ? 'inspector-toggle-button active'
+            : 'inspector-toggle-button'
+        }
         onClick={onToggleInspector}
         title="Inspector umschalten"
       >
@@ -2399,6 +3387,7 @@ function BoardView({
   onCloseInspector,
   onOpenItem,
   onOpenInspectorItem,
+  resolveImageSrc,
   onUpdateItemContent,
   onMoveCard,
   onAddColumn,
@@ -2420,6 +3409,7 @@ function BoardView({
   onCloseInspector: () => void
   onOpenItem: (id: string) => void
   onOpenInspectorItem: (id: string) => void
+  resolveImageSrc: ImageResolver
   onUpdateItemContent: (itemId: string, content: string) => void
   onMoveCard: (
     cardId: string,
@@ -2475,7 +3465,7 @@ function BoardView({
           </label>
         </div>
       </div>
-      <CanvasAuxControls
+      <InspectorToggleControl
         inspectorOpen={inspectorOpen}
         onToggleInspector={onToggleInspector}
       />
@@ -2514,6 +3504,7 @@ function BoardView({
               onCloseInspector={onCloseInspector}
               onOpenItem={onOpenItem}
               onOpenInspectorItem={onOpenInspectorItem}
+              resolveImageSrc={resolveImageSrc}
               onUpdateItemContent={onUpdateItemContent}
               draggingCardId={draggingCardId}
               getDraggedCardId={() => draggingCardIdRef.current}
@@ -2584,6 +3575,7 @@ function BoardColumn({
   onCloseInspector,
   onOpenItem,
   onOpenInspectorItem,
+  resolveImageSrc,
   onUpdateItemContent,
   draggingCardId,
   getDraggedCardId,
@@ -2607,6 +3599,7 @@ function BoardColumn({
   onCloseInspector: () => void
   onOpenItem: (id: string) => void
   onOpenInspectorItem: (id: string) => void
+  resolveImageSrc: ImageResolver
   onUpdateItemContent: (itemId: string, content: string) => void
   draggingCardId: string | null
   getDraggedCardId: () => string | null
@@ -2739,6 +3732,7 @@ function BoardColumn({
                   item={item}
                   onFocus={() => onSelectItem(item.id)}
                   onOpen={() => onOpenItem(item.id)}
+                  resolveImageSrc={resolveImageSrc}
                   onUpdateContent={onUpdateItemContent}
                   onToggleDone={onToggleDone}
                 />
@@ -2790,12 +3784,14 @@ function BoardCardEditor({
   item,
   onFocus,
   onOpen,
+  resolveImageSrc,
   onUpdateContent,
   onToggleDone,
 }: {
   item: Item
   onFocus: () => void
   onOpen: () => void
+  resolveImageSrc: ImageResolver
   onUpdateContent: (itemId: string, content: string) => void
   onToggleDone: (itemId: string) => void
 }) {
@@ -2803,13 +3799,18 @@ function BoardCardEditor({
     () => splitItemContent(item.content),
     [item.content],
   )
+  const images = useMemo(() => extractMarkdownImages(body), [body])
+  const visibleBody = useMemo(() => removeMarkdownImages(body), [body])
 
   function updateTitle(nextTitle: string) {
     onUpdateContent(item.id, composeItemContent(nextTitle, body))
   }
 
   function updateBody(nextBody: string) {
-    onUpdateContent(item.id, composeItemContent(title, nextBody))
+    onUpdateContent(
+      item.id,
+      composeItemContent(title, mergeVisibleBodyWithImages(nextBody, body)),
+    )
   }
 
   return (
@@ -2823,6 +3824,7 @@ function BoardCardEditor({
           onClick={(event) => event.stopPropagation()}
           onDoubleClick={(event) => event.stopPropagation()}
           onFocus={onFocus}
+          onKeyDown={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
         />
         <div className="work-card-actions">
@@ -2852,12 +3854,18 @@ function BoardCardEditor({
       <textarea
         className="work-card-body"
         placeholder="Hier direkt weiterdenken…"
-        value={body}
+        value={visibleBody}
         onChange={(event) => updateBody(event.target.value)}
         onClick={(event) => event.stopPropagation()}
         onDoubleClick={(event) => event.stopPropagation()}
         onFocus={onFocus}
+        onKeyDown={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
+      />
+      <MarkdownImageStrip
+        images={images}
+        resolveImageSrc={resolveImageSrc}
+        variant="card"
       />
     </>
   )
@@ -3385,6 +4393,7 @@ function toFlowNodes(
       selectionStart: number,
       selectionEnd: number,
     ) => Promise<number | null>
+    resolveImageSrc: ImageResolver
     pendingFocusItemId: string | null
     onAutoFocusHandled: (itemId: string) => void
     onResize: (itemId: string, width: number, height: number) => void
@@ -3405,6 +4414,7 @@ function toFlowNodes(
         onUpdateContent: callbacks.onUpdateContent,
         onOpenScript: callbacks.onOpenScript,
         onInsertImage: callbacks.onInsertImage,
+        resolveImageSrc: callbacks.resolveImageSrc,
         onAutoFocusHandled: callbacks.onAutoFocusHandled,
         onResize: callbacks.onResize,
         onDelete: callbacks.onDelete,
@@ -3426,6 +4436,8 @@ function CanvasNoteNode({
     parsedContent.title ||
     (!data.content.trim() && data.title === 'Ohne Titel' ? '' : data.title)
   const body = parsedContent.body
+  const images = useMemo(() => extractMarkdownImages(body), [body])
+  const visibleBody = useMemo(() => removeMarkdownImages(body), [body])
   const [menuSelection, setMenuSelection] = useState<{
     selectionStart: number
     selectionEnd: number
@@ -3436,7 +4448,10 @@ function CanvasNoteNode({
   }
 
   function updateBody(nextBody: string) {
-    data.onUpdateContent(data.itemId, composeItemContent(title, nextBody))
+    data.onUpdateContent(
+      data.itemId,
+      composeItemContent(title, mergeVisibleBodyWithImages(nextBody, body)),
+    )
   }
 
   useEffect(() => {
@@ -3487,18 +4502,27 @@ function CanvasNoteNode({
           data.onResize(data.itemId, params.width, params.height)
         }}
       />
-      <Handle
-        className="canvas-node-handle canvas-node-handle--target"
-        id="left"
-        position={Position.Left}
-        type="target"
-      />
-      <Handle
-        className="canvas-node-handle canvas-node-handle--target"
-        id="top"
-        position={Position.Top}
-        type="target"
-      />
+      {canvasConnectionHandles.map((handle) => (
+        <Handle
+          className="canvas-node-handle canvas-node-handle--target"
+          id={handle.id}
+          isConnectable={false}
+          key={`target-${handle.id}`}
+          position={handle.position}
+          type="target"
+        />
+      ))}
+      {canvasConnectionHandles.map((handle) => (
+        <Handle
+          aria-label={`${handle.label} verbinden`}
+          className="canvas-node-handle canvas-node-handle--source"
+          id={handle.id}
+          key={`source-${handle.id}`}
+          position={handle.position}
+          title={`${handle.label} verbinden`}
+          type="source"
+        />
+      ))}
       <div className={selected ? 'canvas-note-node is-selected' : 'canvas-note-node'}>
         <div className="canvas-note-header">
           <input
@@ -3507,6 +4531,7 @@ function CanvasNoteNode({
             placeholder="Titel"
             value={title}
             onChange={(event) => updateTitle(event.target.value)}
+            onKeyDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
           />
           <button
@@ -3526,7 +4551,7 @@ function CanvasNoteNode({
           ref={textareaRef}
           className="canvas-note-body nodrag nowheel"
           placeholder="Schreib hier..."
-          value={body}
+          value={visibleBody}
           onChange={(event) => updateBody(event.target.value)}
           onContextMenu={(event) => {
             event.preventDefault()
@@ -3537,7 +4562,14 @@ function CanvasNoteNode({
               selectionEnd: textarea.selectionEnd,
             })
           }}
+          onKeyDown={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
+        />
+
+        <MarkdownImageStrip
+          images={images}
+          resolveImageSrc={data.resolveImageSrc}
+          variant="node"
         />
 
         {menuSelection && (
@@ -3591,18 +4623,6 @@ function CanvasNoteNode({
           </div>
         )}
       </div>
-      <Handle
-        className="canvas-node-handle canvas-node-handle--source"
-        id="right"
-        position={Position.Right}
-        type="source"
-      />
-      <Handle
-        className="canvas-node-handle canvas-node-handle--source"
-        id="bottom"
-        position={Position.Bottom}
-        type="source"
-      />
     </>
   )
 }
