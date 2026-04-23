@@ -32,14 +32,15 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Columns3,
   FileText,
   Languages,
   Minus,
   Monitor,
   Moon,
+  Network,
   Palette,
   Plus,
-  RefreshCw,
   Settings,
   Sun,
   Trash2,
@@ -47,6 +48,8 @@ import {
   X,
 } from 'lucide-react'
 import {
+  CanvasMarkdownEditor,
+  type CanvasMarkdownEditorHandle,
   MarkdownEditor,
   type MarkdownMode,
 } from './components/editor/MarkdownEditor'
@@ -97,6 +100,7 @@ type SidebarIconComponent = React.ComponentType<{
 
 const sidebarWidthStorageKey = 'tisch.sidebarWidth'
 const sidebarProjectsHeightStorageKey = 'tisch.sidebarProjectsHeight'
+const sidebarOpenStorageKey = 'tisch.sidebarOpen'
 const appThemeStorageKey = 'tisch.appTheme'
 const appLanguageStorageKey = 'tisch.appLanguage'
 const editorFontStorageKey = 'tisch.editorFont'
@@ -155,6 +159,15 @@ function readStoredChoice<T extends string>(
   return stored && allowed.includes(stored as T) ? (stored as T) : fallback
 }
 
+function readStoredBoolean(key: string, fallback: boolean) {
+  if (typeof window === 'undefined') {
+    return fallback
+  }
+
+  const stored = window.localStorage.getItem(key)
+  return stored === null ? fallback : stored === 'true'
+}
+
 type CanvasFlowNodeData = {
   itemId: string
   title: string
@@ -162,11 +175,8 @@ type CanvasFlowNodeData = {
   autoFocusBody: boolean
   onUpdateContent: (itemId: string, content: string) => void
   onOpenScript: (itemId: string) => void
-  onInsertImage: (
-    itemId: string,
-    selectionStart: number,
-    selectionEnd: number,
-  ) => Promise<number | null>
+  onPickImage: () => Promise<string | null>
+  normalizeImageSrc: (src: string) => string
   resolveImageSrc: ImageResolver
   onAutoFocusHandled: (itemId: string) => void
   onResize: (itemId: string, width: number, height: number) => void
@@ -459,8 +469,10 @@ function App() {
   const [projectDetailOpen, setProjectDetailOpen] = useState(true)
   const [pageMode, setPageMode] = useState<PageMode>('write')
   const [rightOpen, setRightOpen] = useState(false)
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(() =>
+    readStoredBoolean(sidebarOpenStorageKey, true),
+  )
   const [canvasEdgeStyle, setCanvasEdgeStyle] = useState<CanvasEdgeStyle>('bezier')
-  const [hideDone, setHideDone] = useState(false)
   const [appTheme, setAppTheme] = useState<AppTheme>(() =>
     readStoredChoice<AppTheme>(appThemeStorageKey, 'light', ['light', 'dark']),
   )
@@ -507,6 +519,9 @@ function App() {
   const [pendingCanvasFocusItemId, setPendingCanvasFocusItemId] = useState<
     string | null
   >(null)
+  const [pendingCanvasCenterItemId, setPendingCanvasCenterItemId] = useState<
+    string | null
+  >(null)
   const [canvasUndoStack, setCanvasUndoStack] = useState<PlannerData[]>([])
   const [canvasRedoStack, setCanvasRedoStack] = useState<PlannerData[]>([])
   const settingsLauncherRef = useRef<HTMLDivElement | null>(null)
@@ -517,6 +532,10 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(sidebarWidthStorageKey, String(sidebarWidth))
   }, [sidebarWidth])
+
+  useEffect(() => {
+    window.localStorage.setItem(sidebarOpenStorageKey, String(leftSidebarOpen))
+  }, [leftSidebarOpen])
 
   useEffect(() => {
     document.documentElement.dataset.theme = appTheme
@@ -946,6 +965,33 @@ function App() {
     setView('page')
   }
 
+  function openItemInCanvas(itemId: string) {
+    const canvas = projectCanvases.find((entry) =>
+      entry.nodes.some((node) => node.itemId === itemId),
+    )
+    if (!canvas) {
+      return
+    }
+
+    setActiveCanvasId(canvas.id)
+    setActiveItemId(itemId)
+    setPendingCanvasCenterItemId(itemId)
+    setView('canvas')
+  }
+
+  function openItemInBoard(itemId: string) {
+    const board = projectBoards.find((entry) =>
+      entry.cards.some((card) => card.itemId === itemId),
+    )
+    if (!board) {
+      return
+    }
+
+    setActiveBoardId(board.id)
+    setActiveItemId(itemId)
+    setView('board')
+  }
+
   function openSettings(section: SettingsSection = 'appearance') {
     setSettingsSection(section)
     setSettingsMenuOpen(false)
@@ -1020,7 +1066,7 @@ function App() {
     }
 
     const confirmed = window.confirm(
-      `Projekt „${project.name}“ löschen? Alle zugehörigen Skripte, Boards und Canvas-Daten werden entfernt.`,
+      `Projekt „${project.name}“ löschen? Alle zugehörigen Zettel, Boards und Canvas-Daten werden entfernt.`,
     )
     if (!confirmed) {
       return
@@ -1203,7 +1249,7 @@ function App() {
     if (!data || !activeProject) {
       return
     }
-    const item = buildItem('Neues Skript')
+    const item = buildItem('Neuer Zettel')
     commit({ ...data, items: [item, ...data.items] })
     setActiveItemId(item.id)
     setView('page')
@@ -1238,7 +1284,7 @@ function App() {
       return
     }
 
-    const confirmed = window.confirm(`Skript „${itemToDelete.title}“ löschen?`)
+    const confirmed = window.confirm(`Zettel „${itemToDelete.title}“ löschen?`)
     if (!confirmed) {
       return
     }
@@ -1446,7 +1492,7 @@ function App() {
     })
   }
 
-  /** Create a brand new script item and add it as a board card. */
+  /** Create a brand new item and add it as a board card. */
   function addBoardCardAsNewScript(columnId: string, title: string) {
     if (!activeBoard) {
       return
@@ -1554,7 +1600,7 @@ function App() {
     createCanvasScript({ title })
   }
 
-  /** Promote a canvas-only item to a full script and open its page. */
+  /** Open an item as a full-page Zettel. */
   function openNodeAsScript(itemId: string) {
     if (!data) {
       return
@@ -1583,33 +1629,6 @@ function App() {
       ...item,
       ...deriveItemFieldsFromContent(item, content),
     }))
-  }
-
-  async function insertCanvasItemImage(
-    itemId: string,
-    selectionStart: number,
-    selectionEnd: number,
-  ) {
-    const imagePath = await pickImage()
-    if (!imagePath) {
-      return null
-    }
-
-    const snippet = `\n![Bild](${imagePath})\n`
-    const item = data?.items.find((entry) => entry.id === itemId)
-    if (!item) {
-      return null
-    }
-
-    recordCanvasHistorySnapshot()
-    const nextContent = [
-      item.content.slice(0, selectionStart),
-      snippet,
-      item.content.slice(selectionEnd),
-    ].join('')
-
-    updateCanvasItemContent(itemId, nextContent)
-    return selectionStart + snippet.length
   }
 
   function markCanvasItemFocusHandled(itemId: string) {
@@ -1797,13 +1816,37 @@ function App() {
         'app-shell',
         `view-${view}`,
         rightOpen ? 'right-open' : 'right-closed',
+        leftSidebarOpen ? 'left-open' : 'left-closed',
       ].join(' ')}
       style={appLayoutStyle}
     >
       <div className="titlebar-drag" />
+      <button
+        aria-label={
+          leftSidebarOpen ? 'Linkes Panel einklappen' : 'Linkes Panel ausklappen'
+        }
+        className="sidebar-toggle-button"
+        onClick={() => setLeftSidebarOpen((open) => !open)}
+        title={leftSidebarOpen ? 'Linkes Panel einklappen' : 'Linkes Panel ausklappen'}
+        type="button"
+      >
+        {leftSidebarOpen ? (
+          <ChevronLeft size={12} aria-hidden />
+        ) : (
+          <ChevronRight size={12} aria-hidden />
+        )}
+      </button>
 
       <aside
-        className={view === 'settings' ? 'sidebar settings-sidebar' : 'sidebar'}
+        className={[
+          'sidebar',
+          view === 'settings' ? 'settings-sidebar' : '',
+          leftSidebarOpen ? 'is-open' : 'is-closed',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        aria-hidden={!leftSidebarOpen}
+        inert={leftSidebarOpen ? undefined : true}
       >
         {view === 'settings' ? (
           <SettingsSidebar
@@ -1863,15 +1906,6 @@ function App() {
                         })
                       }
                       onRename={(value) => renameProject(project.id, value)}
-                      trailing={
-                        isActive ? (
-                          <RefreshCw
-                            className="project-sync"
-                            size={12}
-                            aria-hidden
-                          />
-                        ) : null
-                      }
                     />
                   )
                 })}
@@ -1970,13 +2004,13 @@ function App() {
 
                     <CategorySection
                       id="skripte"
-                      label="Skripte"
+                      label="Zettel"
                       icon={ScriptSidebarIcon}
                       expanded={expandedCategories.skripte}
                       onToggle={() => toggleCategory('skripte')}
                       onAdd={addScript}
-                      addLabel="Neues Skript"
-                      emptyHint="Noch keine Skripte."
+                      addLabel="Neuer Zettel"
+                      emptyHint="Noch keine Zettel."
                       entries={projectScripts.map((item) => ({
                         id: item.id,
                         label: item.title,
@@ -2092,7 +2126,7 @@ function App() {
         {view !== 'settings' && !activeProject && (
           <EmptyView
             title="Kein Projekt"
-            description="Lege zuerst ein Projekt an, damit du Canvas, Boards und Skripte organisieren kannst."
+            description="Lege zuerst ein Projekt an, damit du Canvas, Boards und Zettel organisieren kannst."
             actionLabel="Neues Projekt"
             onAction={addProject}
           />
@@ -2101,8 +2135,16 @@ function App() {
         {view !== 'settings' && activeProject && view === 'page' && activeItem && (
           <PageView
             item={activeItem}
+            canOpenCanvas={projectCanvases.some((canvas) =>
+              canvas.nodes.some((node) => node.itemId === activeItem.id),
+            )}
+            canOpenBoard={projectBoards.some((board) =>
+              board.cards.some((card) => card.itemId === activeItem.id),
+            )}
             pageMode={pageMode}
             inspectorOpen={rightOpen}
+            onOpenCanvas={() => openItemInCanvas(activeItem.id)}
+            onOpenBoard={() => openItemInBoard(activeItem.id)}
             onModeChange={setPageMode}
             onPickImage={pickImage}
             resolveImageSrc={resolveWorkspaceImage}
@@ -2115,7 +2157,7 @@ function App() {
         {view !== 'settings' && activeProject && view === 'page' && !activeItem && (
           <EmptyView
             title="Keine Seite ausgewählt"
-            description="Öffne ein Skript aus der Seitenleiste."
+            description="Öffne einen Zettel aus der Seitenleiste."
           />
         )}
 
@@ -2137,7 +2179,8 @@ function App() {
                 createCanvasScript({ position, focusBody: true })
               }
               onUpdateNodeContent={updateCanvasItemContent}
-              onInsertNodeImage={insertCanvasItemImage}
+              onPickImage={pickImage}
+              normalizeImageSrc={normalizeWorkspaceImageSrc}
               resolveImageSrc={resolveWorkspaceImage}
               onResizeNode={resizeCanvasNode}
               onDeleteNode={deleteCanvasItem}
@@ -2146,7 +2189,10 @@ function App() {
               onUndo={undoCanvas}
               onRedo={redoCanvas}
               pendingFocusItemId={pendingCanvasFocusItemId}
+              pendingCenterItemId={pendingCanvasCenterItemId}
               onCanvasItemFocusHandled={markCanvasItemFocusHandled}
+              onCanvasItemCenterHandled={() => setPendingCanvasCenterItemId(null)}
+              selectedItemId={activeItemId}
               projectItems={projectItemsForSearch}
               inspectorOpen={rightOpen}
               onToggleInspector={() => setRightOpen((open) => !open)}
@@ -2169,7 +2215,6 @@ function App() {
             board={activeBoard}
             items={data.items}
             projectItems={projectItemsForSearch}
-            hideDone={hideDone}
             selectedItemId={activeItem?.id ?? null}
             onSelectItem={setActiveItemId}
             inspectorOpen={rightOpen}
@@ -2191,7 +2236,6 @@ function App() {
             onToggleDone={(itemId) =>
               updateItem(itemId, (item) => ({ ...item, done: !item.done }))
             }
-            onToggleHideDone={() => setHideDone((hidden) => !hidden)}
           />
         )}
 
@@ -2313,9 +2357,13 @@ function SidebarEditableRow({
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
-              event.currentTarget.blur()
+              event.preventDefault()
+              event.stopPropagation()
+              commitDraft()
             }
             if (event.key === 'Escape') {
+              event.preventDefault()
+              event.stopPropagation()
               cancelDraft()
             }
           }}
@@ -2471,7 +2519,7 @@ function getSettingsCopy(language: AppLanguage) {
       dark: 'Dark',
       editorFont: 'Editor font',
       editorFontDescription:
-        'Applies to scripts, canvas notes, and board cards.',
+        'Applies to Zettels, canvas notes, and board cards.',
       system: 'System',
       serif: 'Serif',
       mono: 'Mono',
@@ -2485,7 +2533,7 @@ function getSettingsCopy(language: AppLanguage) {
       german: 'Deutsch',
       english: 'English',
       agentIntro:
-        'Local agents can use the Tisch CLI to create scripts, canvases, nodes, and connections.',
+        'Local agents can use the Tisch CLI to create Zettels, canvases, nodes, and connections.',
       workspacePath: 'Workspace',
       workspacePathDescription:
         'The CLI writes to the same local workspace as this app.',
@@ -2512,7 +2560,7 @@ function getSettingsCopy(language: AppLanguage) {
     dark: 'Dunkel',
     editorFont: 'Editor-Schrift',
     editorFontDescription:
-      'Wirkt auf Skripte, Canvas-Notizen und Board-Karten.',
+      'Wirkt auf Zettel, Canvas-Notizen und Board-Karten.',
     system: 'System',
     serif: 'Serif',
     mono: 'Mono',
@@ -2526,7 +2574,7 @@ function getSettingsCopy(language: AppLanguage) {
     german: 'Deutsch',
     english: 'English',
     agentIntro:
-      'Lokale Agenten koennen das Tisch-CLI nutzen, um Skripte, Canvases, Nodes und Verbindungen zu erstellen.',
+      'Lokale Agenten koennen das Tisch-CLI nutzen, um Zettel, Canvases, Nodes und Verbindungen zu erstellen.',
     workspacePath: 'Workspace',
     workspacePathDescription:
       'Das CLI schreibt in denselben lokalen Workspace wie diese App.',
@@ -2825,8 +2873,12 @@ function SettingsChoiceCard({
 
 function PageView({
   item,
+  canOpenCanvas,
+  canOpenBoard,
   pageMode,
   inspectorOpen,
+  onOpenCanvas,
+  onOpenBoard,
   onModeChange,
   onPickImage,
   normalizeImageSrc,
@@ -2835,8 +2887,12 @@ function PageView({
   onToggleInspector,
 }: {
   item: Item
+  canOpenCanvas: boolean
+  canOpenBoard: boolean
   pageMode: PageMode
   inspectorOpen: boolean
+  onOpenCanvas: () => void
+  onOpenBoard: () => void
   onModeChange: (mode: PageMode) => void
   onPickImage: () => Promise<string | null>
   normalizeImageSrc: (src: string) => string
@@ -2855,6 +2911,36 @@ function PageView({
     <section className="page-view">
       <div className="page-header">
         <h1 className="page-title">{item.title}</h1>
+      </div>
+      <div className="page-actions" role="group" aria-label="Zettel-Orte">
+        <button
+          aria-label="Im Canvas zeigen"
+          className="icon-button"
+          disabled={!canOpenCanvas}
+          onClick={onOpenCanvas}
+          title={
+            canOpenCanvas
+              ? 'Im Canvas zeigen'
+              : 'Dieser Zettel liegt in keinem Canvas'
+          }
+          type="button"
+        >
+          <Network size={16} aria-hidden />
+        </button>
+        <button
+          aria-label="Im Board zeigen"
+          className="icon-button"
+          disabled={!canOpenBoard}
+          onClick={onOpenBoard}
+          title={
+            canOpenBoard
+              ? 'Im Board zeigen'
+              : 'Dieser Zettel liegt in keinem Board'
+          }
+          type="button"
+        >
+          <Columns3 size={16} aria-hidden />
+        </button>
       </div>
       <InspectorToggleControl
         inspectorOpen={inspectorOpen}
@@ -3021,7 +3107,8 @@ function CanvasView({
   onCreateNodeScript,
   onCreateNodeAtPosition,
   onUpdateNodeContent,
-  onInsertNodeImage,
+  onPickImage,
+  normalizeImageSrc,
   resolveImageSrc,
   onResizeNode,
   onDeleteNode,
@@ -3030,7 +3117,10 @@ function CanvasView({
   onUndo,
   onRedo,
   pendingFocusItemId,
+  pendingCenterItemId,
   onCanvasItemFocusHandled,
+  onCanvasItemCenterHandled,
+  selectedItemId,
   projectItems,
   inspectorOpen,
   onToggleInspector,
@@ -3049,11 +3139,8 @@ function CanvasView({
   onCreateNodeScript: (title: string) => void
   onCreateNodeAtPosition: (position: { x: number; y: number }) => void
   onUpdateNodeContent: (itemId: string, content: string) => void
-  onInsertNodeImage: (
-    itemId: string,
-    selectionStart: number,
-    selectionEnd: number,
-  ) => Promise<number | null>
+  onPickImage: () => Promise<string | null>
+  normalizeImageSrc: (src: string) => string
   resolveImageSrc: ImageResolver
   onResizeNode: (itemId: string, width: number, height: number) => void
   onDeleteNode: (itemId: string) => void
@@ -3062,13 +3149,16 @@ function CanvasView({
   onUndo: () => void
   onRedo: () => void
   pendingFocusItemId: string | null
+  pendingCenterItemId: string | null
   onCanvasItemFocusHandled: (itemId: string) => void
+  onCanvasItemCenterHandled: () => void
+  selectedItemId: string | null
   projectItems: Item[]
   inspectorOpen: boolean
   onToggleInspector: () => void
   edgeStyle: CanvasEdgeStyle
 }) {
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, setCenter } = useReactFlow()
   const [addOpen, setAddOpen] = useState(false)
 
   const sourceNodes = useMemo(
@@ -3076,9 +3166,11 @@ function CanvasView({
       toFlowNodes(canvas.nodes, items, {
         onUpdateContent: onUpdateNodeContent,
         onOpenScript: onOpenNode,
-        onInsertImage: onInsertNodeImage,
+        onPickImage,
+        normalizeImageSrc,
         resolveImageSrc,
         pendingFocusItemId,
+        selectedItemId,
         onAutoFocusHandled: onCanvasItemFocusHandled,
         onResize: onResizeNode,
         onDelete: onDeleteNode,
@@ -3088,12 +3180,14 @@ function CanvasView({
       items,
       onCanvasItemFocusHandled,
       onDeleteNode,
-      onInsertNodeImage,
+      onPickImage,
+      normalizeImageSrc,
       onOpenNode,
       onResizeNode,
       resolveImageSrc,
       onUpdateNodeContent,
       pendingFocusItemId,
+      selectedItemId,
     ],
   )
   const sourceKey = useMemo(
@@ -3112,10 +3206,11 @@ function CanvasView({
             item?.content,
             item?.summary,
             item?.imagePath,
+            selectedItemId === node.itemId,
           ].join(':')
         })
         .join('|'),
-    [canvas.nodes, items],
+    [canvas.nodes, items, selectedItemId],
   )
   const nodeTypes = useMemo<NodeTypes>(() => ({ tischNode: CanvasNoteNode }), [])
   const edgeTypeName =
@@ -3148,6 +3243,36 @@ function CanvasView({
 
   const takenItemIds = new Set(canvas.nodes.map((node) => node.itemId))
   const availableItems = projectItems.filter((item) => !takenItemIds.has(item.id))
+
+  useEffect(() => {
+    if (!pendingCenterItemId) {
+      return
+    }
+
+    const node = canvas.nodes.find((entry) => entry.itemId === pendingCenterItemId)
+    if (!node) {
+      onCanvasItemCenterHandled()
+      return
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      setCenter(
+        node.x + (node.width ?? 300) / 2,
+        node.y + (node.height ?? 220) / 2,
+        { duration: 420, zoom: 0.9 },
+      )
+      onSelectNode(pendingCenterItemId)
+      onCanvasItemCenterHandled()
+    })
+
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [
+    canvas.nodes,
+    onCanvasItemCenterHandled,
+    onSelectNode,
+    pendingCenterItemId,
+    setCenter,
+  ])
 
   return (
     <section
@@ -3241,7 +3366,7 @@ function CanvasView({
 
       {addOpen && (
         <ItemPickerDialog
-          title="Objekt zum Canvas hinzufügen"
+          title="Zettel zum Canvas hinzufügen"
           placeholder="Titel suchen oder neu erstellen…"
           items={availableItems}
           onSelectExisting={(id) => {
@@ -3269,10 +3394,10 @@ function CanvasQuickActions({
       <button
         className="canvas-action-button"
         onClick={onOpenAdd}
-        title="Objekt hinzufügen"
+        title="Zettel hinzufügen"
       >
         <Plus size={16} />
-        <span>Objekt</span>
+        <span>Zettel</span>
       </button>
     </div>
   )
@@ -3381,7 +3506,6 @@ function BoardView({
   board,
   items,
   projectItems,
-  hideDone,
   selectedItemId,
   onSelectItem,
   inspectorOpen,
@@ -3398,12 +3522,10 @@ function BoardView({
   onAddExistingToColumn,
   onCreateCardInColumn,
   onToggleDone,
-  onToggleHideDone,
 }: {
   board: Board
   items: Item[]
   projectItems: Item[]
-  hideDone: boolean
   selectedItemId: string | null
   onSelectItem: (id: string | null) => void
   inspectorOpen: boolean
@@ -3424,7 +3546,6 @@ function BoardView({
   onAddExistingToColumn: (columnId: string, itemId: string) => void
   onCreateCardInColumn: (columnId: string, title: string) => void
   onToggleDone: (itemId: string) => void
-  onToggleHideDone: () => void
 }) {
   const takenItemIds = new Set(board.cards.map((card) => card.itemId))
   const candidatesForBoard = projectItems.filter(
@@ -3448,6 +3569,25 @@ function BoardView({
     setDropTarget(null)
   }
 
+  useEffect(() => {
+    if (!selectedItemId) {
+      return
+    }
+
+    const safeItemId = selectedItemId.replace(/"/g, '\\"')
+    const animationFrame = window.requestAnimationFrame(() => {
+      document
+        .querySelector(`.work-card[data-item-id="${safeItemId}"]`)
+        ?.scrollIntoView({
+          block: 'center',
+          inline: 'center',
+          behavior: 'smooth',
+        })
+    })
+
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [board.id, selectedItemId])
+
   return (
     <section className="board-view">
       <div className="board-toolbar">
@@ -3457,14 +3597,6 @@ function BoardView({
             <Plus size={15} />
             Spalte
           </button>
-          <label>
-            <input
-              checked={hideDone}
-              onChange={onToggleHideDone}
-              type="checkbox"
-            />
-            Fertige ausblenden
-          </label>
         </div>
       </div>
       <InspectorToggleControl
@@ -3493,7 +3625,7 @@ function BoardView({
               card,
               item: items.find((item) => item.id === card.itemId),
             }))
-            .filter(({ item }) => item && (!hideDone || !item.done))
+            .filter(({ item }) => item)
 
           return (
             <BoardColumn
@@ -3666,6 +3798,16 @@ function BoardColumn({
         <input
           value={column.title}
           onChange={(event) => onRename(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              event.currentTarget.blur()
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              event.currentTarget.blur()
+            }
+          }}
         />
         <span>{cards.length}</span>
         <button onClick={onDelete}>
@@ -3684,9 +3826,11 @@ function BoardColumn({
             <div className="card-slot" key={card.id}>
               {showIndicatorAbove && <div className="drop-indicator" />}
               <article
+                data-item-id={item.id}
                 className={
                   'work-card' +
                   (item.id === selectedItemId ? ' selected' : '') +
+                  (item.done ? ' done' : '') +
                   (isDraggingThis ? ' is-dragging' : '')
                 }
                 draggable
@@ -3826,7 +3970,13 @@ function BoardCardEditor({
           onClick={(event) => event.stopPropagation()}
           onDoubleClick={(event) => event.stopPropagation()}
           onFocus={onFocus}
-          onKeyDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              event.currentTarget.blur()
+            }
+          }}
           onPointerDown={(event) => event.stopPropagation()}
         />
         <div className="work-card-actions">
@@ -3837,19 +3987,26 @@ function BoardCardEditor({
               onOpen()
             }}
             onPointerDown={(event) => event.stopPropagation()}
-            title="Als Skript öffnen"
+            title="Als Zettel öffnen"
           >
             <ArrowUpRight size={14} />
           </button>
           <button
+            aria-label={
+              item.done ? 'Fertig-Markierung entfernen' : 'Als fertig markieren'
+            }
+            aria-pressed={item.done}
             className={item.done ? 'done-check checked' : 'done-check'}
             onClick={(event) => {
               event.stopPropagation()
               onToggleDone(item.id)
             }}
             onPointerDown={(event) => event.stopPropagation()}
+            title={
+              item.done ? 'Fertig-Markierung entfernen' : 'Als fertig markieren'
+            }
           >
-            <span aria-hidden>✓</span>
+            <Check size={14} aria-hidden />
           </button>
         </div>
       </div>
@@ -3929,7 +4086,7 @@ function InlineItemPicker({
             <FileText size={13} />
             <span>{item.title}</span>
             <small>
-              {item.kind === 'script' ? 'Skript' : 'Canvas'}
+              {item.kind === 'script' ? 'Zettel' : 'Canvas'}
             </small>
           </button>
         ))}
@@ -3946,7 +4103,7 @@ function InlineItemPicker({
             </button>
           )}
         {matches.length === 0 && !trimmed && (
-          <span className="item-picker-empty">Noch keine Objekte.</span>
+          <span className="item-picker-empty">Noch keine Zettel.</span>
         )}
       </div>
     </div>
@@ -4048,7 +4205,7 @@ function Inspector({
         <span className="eyebrow">Inspector</span>
         <h2>Nichts ausgewählt</h2>
         <p>
-          Wähle links ein Objekt oder klicke auf eine Karte beziehungsweise Node.
+          Wähle links einen Zettel oder klicke auf eine Karte beziehungsweise Node.
         </p>
       </section>
     )
@@ -4069,7 +4226,7 @@ function Inspector({
   return (
     <>
       <section className="inspector-card">
-        <span className="eyebrow">{view === 'page' ? 'Skript' : 'Objekt'}</span>
+        <span className="eyebrow">Zettel</span>
         <h2>{item.title}</h2>
         {item.summary && <p>{item.summary}</p>}
         <dl className="detail-list">
@@ -4081,7 +4238,7 @@ function Inspector({
             <dt>Darstellungen</dt>
             <dd>
               {[
-                item.kind === 'script' ? 'Skript' : null,
+                item.kind === 'script' ? 'Zettel' : null,
                 boardCard ? 'Board-Karte' : null,
                 canvasNode ? 'Canvas-Node' : null,
               ]
@@ -4179,7 +4336,7 @@ function CanvasConnectionMap({
       </div>
       {!node ? (
         <p className="connection-map-empty">
-          Dieses Objekt liegt im aktuellen Canvas nicht als Node vor.
+          Dieser Zettel liegt im aktuellen Canvas nicht als Node vor.
         </p>
       ) : (
         <>
@@ -4390,13 +4547,11 @@ function toFlowNodes(
   callbacks: {
     onUpdateContent: (itemId: string, content: string) => void
     onOpenScript: (itemId: string) => void
-    onInsertImage: (
-      itemId: string,
-      selectionStart: number,
-      selectionEnd: number,
-    ) => Promise<number | null>
+    onPickImage: () => Promise<string | null>
+    normalizeImageSrc: (src: string) => string
     resolveImageSrc: ImageResolver
     pendingFocusItemId: string | null
+    selectedItemId: string | null
     onAutoFocusHandled: (itemId: string) => void
     onResize: (itemId: string, width: number, height: number) => void
     onDelete: (itemId: string) => void
@@ -4415,12 +4570,14 @@ function toFlowNodes(
         autoFocusBody: callbacks.pendingFocusItemId === node.itemId,
         onUpdateContent: callbacks.onUpdateContent,
         onOpenScript: callbacks.onOpenScript,
-        onInsertImage: callbacks.onInsertImage,
+        onPickImage: callbacks.onPickImage,
+        normalizeImageSrc: callbacks.normalizeImageSrc,
         resolveImageSrc: callbacks.resolveImageSrc,
         onAutoFocusHandled: callbacks.onAutoFocusHandled,
         onResize: callbacks.onResize,
         onDelete: callbacks.onDelete,
       },
+      selected: callbacks.selectedItemId === node.itemId,
       style: { width: node.width ?? 300, height: node.height ?? 220 },
       type: 'tischNode',
     }
@@ -4432,18 +4589,13 @@ function CanvasNoteNode({
   selected,
 }: NodeProps<Node<CanvasFlowNodeData, 'tischNode'>>) {
   const titleInputRef = useRef<HTMLInputElement | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const bodyEditorRef = useRef<CanvasMarkdownEditorHandle | null>(null)
   const parsedContent = useMemo(() => splitItemContent(data.content), [data.content])
   const title =
     parsedContent.title ||
     (!data.content.trim() && data.title === 'Ohne Titel' ? '' : data.title)
   const body = parsedContent.body
-  const images = useMemo(() => extractMarkdownImages(body), [body])
-  const visibleBody = useMemo(() => removeMarkdownImages(body), [body])
-  const [menuSelection, setMenuSelection] = useState<{
-    selectionStart: number
-    selectionEnd: number
-  } | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   function updateTitle(nextTitle: string) {
     data.onUpdateContent(data.itemId, composeItemContent(nextTitle, body))
@@ -4452,22 +4604,22 @@ function CanvasNoteNode({
   function updateBody(nextBody: string) {
     data.onUpdateContent(
       data.itemId,
-      composeItemContent(title, mergeVisibleBodyWithImages(nextBody, body)),
+      composeItemContent(title, nextBody),
     )
   }
 
   useEffect(() => {
-    if (!menuSelection) {
+    if (!menuOpen) {
       return
     }
 
     function closeMenu() {
-      setMenuSelection(null)
+      setMenuOpen(false)
     }
 
     window.addEventListener('pointerdown', closeMenu)
     return () => window.removeEventListener('pointerdown', closeMenu)
-  }, [menuSelection])
+  }, [menuOpen])
 
   useEffect(() => {
     if (!data.autoFocusBody) {
@@ -4482,14 +4634,6 @@ function CanvasNoteNode({
       return
     }
 
-    if (!textareaRef.current) {
-      return
-    }
-
-    textareaRef.current.focus()
-    const length = textareaRef.current.value.length
-    textareaRef.current.setSelectionRange(length, length)
-    data.onAutoFocusHandled(data.itemId)
   }, [data, title])
 
   return (
@@ -4533,7 +4677,13 @@ function CanvasNoteNode({
             placeholder="Titel"
             value={title}
             onChange={(event) => updateTitle(event.target.value)}
-            onKeyDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              event.stopPropagation()
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                event.currentTarget.blur()
+              }
+            }}
             onPointerDown={(event) => event.stopPropagation()}
           />
           <button
@@ -4543,38 +4693,35 @@ function CanvasNoteNode({
               data.onOpenScript(data.itemId)
             }}
             onPointerDown={(event) => event.stopPropagation()}
-            title="Als Skript öffnen"
+            title="Als Zettel öffnen"
           >
             <ArrowUpRight size={14} />
           </button>
         </div>
 
-        <textarea
-          ref={textareaRef}
-          className="canvas-note-body nodrag nowheel"
-          placeholder="Schreib hier..."
-          value={visibleBody}
-          onChange={(event) => updateBody(event.target.value)}
+        <div
+          className="canvas-note-body"
           onContextMenu={(event) => {
             event.preventDefault()
             event.stopPropagation()
-            const textarea = event.currentTarget
-            setMenuSelection({
-              selectionStart: textarea.selectionStart,
-              selectionEnd: textarea.selectionEnd,
-            })
+            setMenuOpen(true)
           }}
-          onKeyDown={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-        />
+        >
+          <CanvasMarkdownEditor
+            ref={bodyEditorRef}
+            autoFocus={data.autoFocusBody && Boolean(title.trim())}
+            content={body}
+            itemId={data.itemId}
+            normalizeImageSrc={data.normalizeImageSrc}
+            onAutoFocusHandled={() => data.onAutoFocusHandled(data.itemId)}
+            onChange={updateBody}
+            onPickImage={data.onPickImage}
+            placeholder="Schreib hier..."
+            resolveImageSrc={data.resolveImageSrc}
+          />
+        </div>
 
-        <MarkdownImageStrip
-          images={images}
-          resolveImageSrc={data.resolveImageSrc}
-          variant="node"
-        />
-
-        {menuSelection && (
+        {menuOpen && (
           <div className="canvas-note-menu nodrag" onPointerDown={(event) => event.stopPropagation()}>
             <button
               className="canvas-note-menu-item"
@@ -4584,24 +4731,8 @@ function CanvasNoteNode({
               }}
               onClick={async (event) => {
                 event.stopPropagation()
-                const textarea = textareaRef.current
-                if (!textarea || !menuSelection) {
-                  setMenuSelection(null)
-                  return
-                }
-
-                const bodyOffset = title.trim() ? `# ${title.trim()}\n\n`.length : 0
-                const cursor = await data.onInsertImage(
-                  data.itemId,
-                  menuSelection.selectionStart + bodyOffset,
-                  menuSelection.selectionEnd + bodyOffset,
-                )
-                setMenuSelection(null)
-                if (cursor !== null && textareaRef.current) {
-                  const nextCursor = Math.max(0, cursor - bodyOffset)
-                  textareaRef.current.focus()
-                  textareaRef.current.setSelectionRange(nextCursor, nextCursor)
-                }
+                await bodyEditorRef.current?.insertImage()
+                setMenuOpen(false)
               }}
             >
               <Plus size={12} />
@@ -4615,7 +4746,7 @@ function CanvasNoteNode({
               }}
               onClick={(event) => {
                 event.stopPropagation()
-                setMenuSelection(null)
+                setMenuOpen(false)
                 data.onDelete(data.itemId)
               }}
             >

@@ -8,7 +8,7 @@ function usage() {
   tisch workspace init
   tisch project list
   tisch project create --name <name> [--description <text>] [--accent <color>]
-  tisch script create --project <id-or-name> --title <title> [--body <text>|--body-file <path>] [--tag <tag>]
+  tisch zettel create --project <id-or-name> --title <title> [--body <text>|--body-file <path>] [--tag <tag>]
   tisch canvas list [--project <id-or-name>]
   tisch canvas create --project <id-or-name> --title <title>
   tisch canvas add-node --canvas <id-or-title> --title <title> [--body <text>|--body-file <path>] [--x <n>] [--y <n>]
@@ -167,7 +167,7 @@ function run(argv) {
     return
   }
 
-  if (area === 'script' && action === 'create') {
+  if ((area === 'zettel' || area === 'script') && action === 'create') {
     const result = mutatePlanner((planner) =>
       store.createScript(planner, {
         project: required(options, 'project'),

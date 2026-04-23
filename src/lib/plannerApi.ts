@@ -9,8 +9,8 @@ const clonePlanner = (data: PlannerData): PlannerData =>
 function normalizePlanner(input: unknown): PlannerData {
   const planner = input as PlannerData
   if (planner?.schemaVersion === 2 && Array.isArray(planner.items)) {
-    // Keep older items visible as scripts. This also folds the removed
-    // `reference` kind into the remaining script/page model.
+    // Keep older items visible as Zettels. This also folds the removed
+    // `reference` kind into the remaining Zettel/page model.
     return {
       ...planner,
       items: planner.items.map((item) =>

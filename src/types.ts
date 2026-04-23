@@ -23,7 +23,7 @@ export interface Item {
   done: boolean
   imagePath?: string
   /**
-   * 'script'     — Markdown page listed in the "Skripte" sidebar.
+   * 'script'     — Markdown page listed in the "Zettel" sidebar.
    * undefined    — canvas-only: exists as a node in a canvas but has not
    *                been promoted to its own page.
    */

@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { EditorContent, useEditor, type Editor as TiptapEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -41,6 +49,23 @@ interface MarkdownEditorProps {
   onModeChange: (mode: MarkdownMode) => void
 }
 
+export type CanvasMarkdownEditorHandle = {
+  focusEnd: () => void
+  insertImage: () => Promise<void>
+}
+
+interface CanvasMarkdownEditorProps {
+  content: string
+  itemId: string
+  placeholder?: string
+  autoFocus?: boolean
+  onPickImage?: () => Promise<string | null>
+  normalizeImageSrc?: (src: string) => string
+  resolveImageSrc?: (src: string) => string | null
+  onAutoFocusHandled?: () => void
+  onChange: (content: string) => void
+}
+
 function normalizeUrl(url: string) {
   const trimmed = url.trim()
   if (!trimmed || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
@@ -75,6 +100,43 @@ function getMarkdown(
   return normalizeImageSrc
     ? transformMarkdownImageUrls(markdown, normalizeImageSrc)
     : markdown
+}
+
+function createMarkdownExtensions(placeholder: string) {
+  return [
+    StarterKit.configure({
+      heading: {
+        levels: [1, 2, 3, 4],
+      },
+      link: false,
+    }),
+    Placeholder.configure({
+      placeholder,
+    }),
+    Link.configure({
+      autolink: true,
+      linkOnPaste: true,
+      openOnClick: false,
+      HTMLAttributes: {
+        rel: 'noopener noreferrer',
+        target: '_blank',
+      },
+    }),
+    Image.configure({
+      inline: false,
+      allowBase64: true,
+    }),
+    TaskList,
+    TaskItem.configure({
+      nested: true,
+    }),
+    TableKit.configure({
+      table: {
+        resizable: false,
+      },
+    }),
+    Markdown.configure({}),
+  ]
 }
 
 function insertLink(editor: TiptapEditor) {
@@ -332,43 +394,7 @@ export function MarkdownEditor({
         : content,
     [content, resolveImageSrc],
   )
-  const extensions = useMemo(
-    () => [
-      StarterKit.configure({
-        heading: {
-          levels: [1, 2, 3, 4],
-        },
-        link: false,
-      }),
-      Placeholder.configure({
-        placeholder: 'Schreib los...',
-      }),
-      Link.configure({
-        autolink: true,
-        linkOnPaste: true,
-        openOnClick: false,
-        HTMLAttributes: {
-          rel: 'noopener noreferrer',
-          target: '_blank',
-        },
-      }),
-      Image.configure({
-        inline: false,
-        allowBase64: true,
-      }),
-      TaskList,
-      TaskItem.configure({
-        nested: true,
-      }),
-      TableKit.configure({
-        table: {
-          resizable: false,
-        },
-      }),
-      Markdown.configure({}),
-    ],
-    [],
-  )
+  const extensions = useMemo(() => createMarkdownExtensions('Schreib los...'), [])
 
   const editor: TiptapEditor | null = useEditor({
     content: editorContent,
@@ -477,3 +503,160 @@ export function MarkdownEditor({
     </div>
   )
 }
+
+export const CanvasMarkdownEditor = forwardRef<
+  CanvasMarkdownEditorHandle,
+  CanvasMarkdownEditorProps
+>(function CanvasMarkdownEditor(
+  {
+    content,
+    itemId,
+    placeholder = 'Schreib hier...',
+    autoFocus = false,
+    onPickImage,
+    normalizeImageSrc,
+    resolveImageSrc,
+    onAutoFocusHandled,
+    onChange,
+  },
+  ref,
+) {
+  const lastEmitted = useRef(content)
+  const editorContent = useMemo(
+    () =>
+      resolveImageSrc
+        ? transformMarkdownImageUrls(
+            content,
+            (src) => resolveImageSrc(src) ?? src,
+          )
+        : content,
+    [content, resolveImageSrc],
+  )
+  const extensions = useMemo(
+    () => createMarkdownExtensions(placeholder),
+    [placeholder],
+  )
+
+  const editor: TiptapEditor | null = useEditor({
+    content: editorContent,
+    contentType: 'markdown',
+    extensions,
+    editorProps: {
+      attributes: {
+        class: 'canvas-note-prose',
+        spellcheck: 'true',
+      },
+      handleClickOn: (_view, _pos, node, _nodePos, event) => {
+        if (node.type.name !== 'text' || !(event.metaKey || event.ctrlKey)) {
+          return false
+        }
+
+        const link = editor?.getAttributes('link').href
+        if (typeof link === 'string' && link) {
+          window.open(link, '_blank', 'noopener,noreferrer')
+          return true
+        }
+
+        return false
+      },
+    },
+    onUpdate: ({ editor: updatedEditor }) => {
+      const markdown = getMarkdown(updatedEditor, normalizeImageSrc)
+      lastEmitted.current = markdown
+      onChange(markdown)
+    },
+  })
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusEnd() {
+        editor?.chain().focus('end').run()
+      },
+      async insertImage() {
+        if (!editor || !onPickImage) {
+          return
+        }
+
+        const imagePath = await onPickImage()
+        if (!imagePath) {
+          return
+        }
+
+        editor
+          .chain()
+          .focus()
+          .setImage({ src: resolveImageSrc?.(imagePath) ?? imagePath })
+          .createParagraphNear()
+          .run()
+      },
+    }),
+    [editor, onPickImage, resolveImageSrc],
+  )
+
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    const current = getMarkdown(editor, normalizeImageSrc)
+    if (current !== content) {
+      editor.commands.setContent(editorContent || '', {
+        contentType: 'markdown',
+        emitUpdate: false,
+      })
+      lastEmitted.current = content
+    }
+  }, [content, editor, editorContent, itemId, normalizeImageSrc])
+
+  useEffect(() => {
+    if (!editor || !resolveImageSrc) {
+      return
+    }
+
+    let changed = false
+    const transaction = editor.state.tr
+
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name !== 'image') {
+        return
+      }
+
+      const currentSrc = String(node.attrs.src ?? '')
+      const stableSrc = normalizeImageSrc?.(currentSrc) ?? currentSrc
+      const resolvedSrc = resolveImageSrc(stableSrc) ?? stableSrc
+      if (resolvedSrc === currentSrc) {
+        return
+      }
+
+      changed = true
+      transaction.setNodeMarkup(pos, undefined, {
+        ...node.attrs,
+        src: resolvedSrc,
+      })
+    })
+
+    if (changed) {
+      editor.view.dispatch(transaction)
+    }
+  }, [editor, normalizeImageSrc, resolveImageSrc])
+
+  useEffect(() => {
+    if (!autoFocus || !editor) {
+      return
+    }
+
+    editor.chain().focus('end').run()
+    onAutoFocusHandled?.()
+  }, [autoFocus, editor, onAutoFocusHandled])
+
+  return (
+    <div
+      className="canvas-note-editor-shell nodrag nowheel"
+      onKeyDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <EditorContent editor={editor} />
+    </div>
+  )
+})

@@ -10,7 +10,7 @@ export const seedPlannerData: PlannerData = {
       id: 'launch-plan',
       name: 'Launch Plan',
       accent: '#2563eb',
-      description: 'Produktideen, Abläufe, Skripte und offene Gedanken.',
+      description: 'Produktideen, Abläufe, Zettel und offene Gedanken.',
     },
     {
       id: 'research',

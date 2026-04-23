@@ -4,13 +4,13 @@ Lokale Desktop-App zum Planen, Schreiben und Ordnen von Ideen. Tisch ist kein ge
 
 ## Idee
 
-Der Kern ist ein gemeinsames Objektmodell. Eine Sache kann gleichzeitig sein:
+Der Kern ist ein gemeinsames Zettel-Modell. Ein Zettel kann gleichzeitig sein:
 
-- eine Seite mit langem Text
+- eine Markdown-Seite mit langem Text
 - eine Karte in einem Board
 - ein Node auf einem Canvas
 
-Diese Darstellungen sind keine getrennten Daten. Board-Karten und Canvas-Nodes zeigen dasselbe `Item`, das auch eine volle Seite mit Markdown-Inhalt besitzt.
+Diese Darstellungen sind keine getrennten Daten. Board-Karten und Canvas-Nodes zeigen denselben `Item`, der auch eine volle Markdown-Seite besitzt.
 
 ## Stack
 
@@ -59,7 +59,7 @@ Fuer Entwicklung oder bewusste Dateiablaeufe kann der Speicherort mit `PLANNER_W
 
 ## UI-Grundstruktur
 
-- Linkes Paneel: Projekte und Objektliste, einklappbar
+- Linkes Paneel: Projekte und Zettel, einklappbar
 - Mitte: aktive Arbeitsflaeche
 - Rechtes Paneel: Inspector fuer Status, Darstellungen, Datei und Links, optional einklappbar
 - Seite: ein einzelner Schreib-/Lesebereich mit Toggle `Edit` / `Preview`
@@ -91,6 +91,7 @@ Das Agent-freundliche CLI heisst `tisch`:
 npm exec tisch -- workspace init
 npm exec tisch -- project list
 npm exec tisch -- project create --name "Short-form"
+npm exec tisch -- zettel create --project "Short-form" --title "Hook" --body "..."
 npm exec tisch -- canvas create --project "Short-form" --title "Videoidee"
 npm exec tisch -- canvas add-node --canvas "Videoidee" --title "Hook" --body "..."
 npm exec tisch -- canvas connect --canvas "Videoidee" --from "Hook" --to "CTA"
@@ -105,7 +106,7 @@ Standardpfad; `PLANNER_WORKSPACE_DIR` bleibt fuer Entwicklung kompatibel.
 Der wiederverwendbare Codex-Skill ist kein Teil dieses App-Repositories. Lokal
 kann er als `tisch`-Skill unter `~/.codex/skills/tisch` installiert werden. Der
 Skill weist Agenten an, Tisch ueber das CLI zu bedienen und definiert Standards
-fuer Skripte, Short-form-Canvas-Strukturen, B-Roll-Nodes und Verbindungen.
+fuer Zettel, Short-form-Canvas-Strukturen, B-Roll-Nodes und Verbindungen.
 
 ## Datenmodell
 
