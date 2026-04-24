@@ -3,6 +3,11 @@ import type { PlannerData } from '../types'
 
 const storageKey = 'socialmedia-planning.workspace'
 
+export type ImportedMarkdownFile = {
+  name: string
+  content: string
+}
+
 const clonePlanner = (data: PlannerData): PlannerData =>
   JSON.parse(JSON.stringify(data)) as PlannerData
 
@@ -71,4 +76,72 @@ export async function pickImage(): Promise<string | null> {
   }
 
   return null
+}
+
+export async function importMarkdownFiles(): Promise<ImportedMarkdownFile[]> {
+  if (window.planner?.importMarkdownFiles) {
+    return window.planner.importMarkdownFiles()
+  }
+
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.md,.markdown,text/markdown,text/x-markdown'
+    input.multiple = true
+    input.style.display = 'none'
+    let settled = false
+
+    const cleanup = () => {
+      window.removeEventListener('focus', handleWindowFocus)
+      input.removeEventListener('cancel', handleCancel)
+      if (input.parentElement) {
+        document.body.removeChild(input)
+      }
+    }
+
+    const finish = (files: File[]) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      cleanup()
+
+      Promise.all(
+        files
+          .filter((file) => /\.(md|markdown)$/i.test(file.name))
+          .map(async (file) => ({
+            name: file.name,
+            content: await file.text(),
+          })),
+      ).then(resolve)
+    }
+
+    const handleCancel = () => {
+      finish([])
+    }
+
+    function handleWindowFocus() {
+      window.setTimeout(() => {
+        if (settled) {
+          return
+        }
+
+        finish(Array.from(input.files ?? []))
+      }, 300)
+    }
+
+    input.addEventListener(
+      'change',
+      () => {
+        finish(Array.from(input.files ?? []))
+      },
+      { once: true },
+    )
+    input.addEventListener('cancel', handleCancel, { once: true })
+    window.addEventListener('focus', handleWindowFocus)
+
+    document.body.appendChild(input)
+    input.click()
+  })
 }

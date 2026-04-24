@@ -141,6 +141,7 @@ button:disabled {
 .right-pane,
 .canvas-tool-pill,
 .canvas-zoom,
+.react-flow__minimap,
 .inspector-toggle-control,
 .canvas-history,
 .page-header,
@@ -904,6 +905,40 @@ img.category-icon {
   background: var(--color-bg-muted);
 }
 
+.canvas-view .react-flow__minimap {
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  bottom: 18px;
+  box-shadow: 0 12px 32px rgb(28 25 23 / 0.1);
+  color: var(--color-text);
+  cursor: grab;
+  overflow: hidden;
+  padding: 6px;
+  right: 18px;
+  z-index: 25;
+}
+
+.canvas-view .react-flow__minimap:active {
+  cursor: grabbing;
+}
+
+.canvas-view .react-flow__minimap-svg {
+  display: block;
+}
+
+.canvas-view .react-flow__minimap-mask {
+  stroke-width: 1.4px;
+}
+
+.canvas-view .react-flow__minimap-node {
+  opacity: 0.86;
+}
+
+.canvas-view .react-flow__minimap-node.selected {
+  opacity: 1;
+}
+
 /* Shared inspector toggle in the top-right corner of every workspace view. */
 .inspector-toggle-control {
   align-items: center;
@@ -1458,6 +1493,14 @@ img.category-icon {
   margin: 0 0 var(--editor-paragraph-spacing);
 }
 
+.markdown-prose > p:first-child {
+  color: var(--color-text);
+  font-size: 36px;
+  font-weight: var(--editor-bold-weight);
+  line-height: 1.12;
+  margin: 0 0 0.52em;
+}
+
 .markdown-prose > :first-child {
   margin-top: 0;
 }
@@ -1679,6 +1722,7 @@ img.category-icon {
   grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   padding-top: var(--titlebar-height);
+  position: relative;
 }
 
 .board-toolbar {
@@ -1686,8 +1730,7 @@ img.category-icon {
   border-bottom: 1px solid var(--color-border);
   display: flex;
   gap: 14px;
-  justify-content: space-between;
-  padding: 14px 28px;
+  padding: 14px 150px 14px 28px;
 }
 
 .board-toolbar h2 {
@@ -1698,13 +1741,22 @@ img.category-icon {
 
 .board-toolbar-actions {
   align-items: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(28 25 23 / 0.08);
   display: flex;
-  gap: 10px;
+  gap: 2px;
+  padding: 4px;
+  position: absolute;
+  right: 66px;
+  top: 18px;
+  z-index: 30;
 }
 
 .board-toolbar button {
   align-items: center;
-  background: var(--color-bg-muted);
+  background: transparent;
   border-radius: 7px;
   color: var(--color-text);
   display: inline-flex;
@@ -1715,7 +1767,7 @@ img.category-icon {
 }
 
 .board-toolbar button:hover {
-  background: var(--color-bg-emphasis);
+  background: var(--color-bg-muted);
 }
 
 .danger,
@@ -1735,7 +1787,7 @@ img.category-icon {
   align-items: start;
   display: grid;
   gap: 14px;
-  grid-auto-columns: minmax(260px, 1fr);
+  grid-auto-columns: 320px;
   grid-auto-flow: column;
   overflow-x: auto;
   overflow-y: hidden;
@@ -1752,6 +1804,32 @@ img.category-icon {
   max-height: 100%;
   padding: 10px;
   width: 100%;
+}
+
+.board-add-column {
+  align-items: center;
+  align-self: start;
+  background: color-mix(in srgb, var(--color-bg-secondary) 78%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--color-border-strong) 70%, transparent);
+  border-radius: 10px;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 550;
+  gap: 8px;
+  height: 48px;
+  justify-content: center;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+  width: 100%;
+}
+
+.board-add-column:hover {
+  background: var(--color-bg-secondary);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
 }
 
 .kanban-column.is-drop-target {
@@ -1818,6 +1896,7 @@ img.category-icon {
   border-radius: 10px;
   box-shadow: 0 10px 24px rgb(28 25 23 / 0.045);
   padding: 12px;
+  position: relative;
   transition:
     border-color 140ms ease,
     box-shadow 140ms ease,
@@ -1830,11 +1909,9 @@ img.category-icon {
 }
 
 .work-card.selected {
-  background: var(--color-accent-soft);
-  border-color: color-mix(in srgb, var(--color-accent) 48%, transparent);
-  box-shadow:
-    0 14px 30px rgb(37 99 235 / 0.08),
-    0 0 0 1px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  background: var(--color-bg);
+  border-color: color-mix(in srgb, var(--color-accent) 62%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 32%, transparent);
 }
 
 .work-card.done {
@@ -1860,6 +1937,18 @@ img.category-icon {
 
 .work-card.is-dragging {
   opacity: 0.45;
+}
+
+.work-card-editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.work-card-menu {
+  right: 10px;
+  top: 38px;
+  z-index: 8;
 }
 
 .card-slot {
@@ -1901,60 +1990,47 @@ img.category-icon {
   color: var(--color-text-soft);
 }
 
-.work-card-body {
-  background: transparent;
-  border: 0;
+.work-card-editor .canvas-note-editor-shell {
+  height: auto;
+  margin-top: 8px;
+  max-height: 320px;
+  min-height: 74px;
+  overscroll-behavior: contain;
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.work-card-editor .canvas-note-editor-shell::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+}
+
+.work-card-editor .canvas-note-editor-shell::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-text-soft) 42%, transparent);
+  border-radius: 999px;
+}
+
+.work-card-editor .canvas-note-prose {
   color: var(--color-text-muted);
   font-family: var(--editor-font-family);
   font-size: calc(var(--editor-base-font-size) * 0.75);
   line-height: 1.45;
-  margin: 8px 0 0;
   min-height: 74px;
-  outline: none;
-  padding: 0;
-  resize: vertical;
-  width: 100%;
 }
 
-.work-card-body::placeholder {
-  color: var(--color-text-soft);
+.work-card-editor .canvas-note-prose p {
+  margin: 0 0 0.45em;
 }
 
-.markdown-image-strip {
-  display: grid;
-  gap: 8px;
-}
-
-.markdown-image-strip img {
+.work-card-editor .canvas-note-prose img {
   border-radius: 8px;
   display: block;
   height: auto;
-  object-fit: cover;
-  width: 100%;
-}
-
-.markdown-image-strip--card {
-  margin-top: 10px;
-}
-
-.markdown-image-strip--card img {
-  max-height: 180px;
-}
-
-.markdown-image-strip--node {
-  flex: 0 0 auto;
-  margin-top: 8px;
-  max-height: 42%;
-  overflow: auto;
-  padding: 0;
-}
-
-.markdown-image-strip--node img {
-  margin: 0 auto;
-  max-height: 180px;
-  max-width: 100%;
+  margin: 0.65em 0 0;
+  max-height: none;
   object-fit: contain;
-  width: auto;
+  width: 100%;
 }
 
 .work-card-actions {
@@ -2013,41 +2089,6 @@ img.category-icon {
   font-size: 11px;
   line-height: 1;
   padding: 5px 7px;
-}
-
-/* ------------------------------------------------------------------ */
-/* Statusbar                                                           */
-/* ------------------------------------------------------------------ */
-
-.statusbar {
-  align-items: center;
-  bottom: 0;
-  color: var(--color-text-soft);
-  display: flex;
-  font-size: 11px;
-  gap: 14px;
-  justify-content: space-between;
-  left: var(--sidebar-width);
-  padding: 6px 16px;
-  pointer-events: none;
-  position: fixed;
-  right: 0;
-  z-index: 5;
-}
-
-.left-closed .statusbar {
-  left: 0;
-}
-
-.statusbar span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.view-canvas .statusbar,
-.view-settings .statusbar {
-  display: none;
 }
 
 /* ------------------------------------------------------------------ */
@@ -2578,6 +2619,46 @@ img.category-icon {
 .settings-range-row input {
   accent-color: var(--color-accent);
   flex: 1;
+}
+
+.settings-import-control {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-action-button {
+  align-items: center;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.settings-action-button:hover:not(:disabled) {
+  background: var(--color-bg-emphasis);
+  border-color: var(--color-border-strong);
+}
+
+.settings-import-result {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  line-height: 1.45;
+}
+
+.settings-import-result svg {
+  color: var(--color-green);
+  flex: 0 0 auto;
 }
 
 .settings-code-line {

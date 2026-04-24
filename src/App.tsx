@@ -5,6 +5,7 @@ import {
   ConnectionMode,
   Handle,
   MarkerType,
+  MiniMap,
   NodeResizer,
   ReactFlow,
   ReactFlowProvider,
@@ -35,6 +36,7 @@ import {
   Columns3,
   FileText,
   Languages,
+  LocateFixed,
   Minus,
   Monitor,
   Moon,
@@ -45,6 +47,7 @@ import {
   Sun,
   Trash2,
   Type,
+  Upload,
   X,
 } from 'lucide-react'
 import {
@@ -60,10 +63,12 @@ import projectSectionUrl from './assets/project-section.svg'
 import scriptSectionUrl from './assets/script-section.svg'
 import {
   getWorkspacePath,
+  importMarkdownFiles,
   loadPlanner,
   pickImage,
   savePlanner,
 } from './lib/plannerApi'
+import type { ImportedMarkdownFile } from './lib/plannerApi'
 import type {
   Board,
   CanvasEdge,
@@ -81,7 +86,7 @@ type CategoryId = 'canvas' | 'board' | 'skripte'
 type CanvasEdgeStyle = 'bezier' | 'smoothstep' | 'straight'
 type AppTheme = 'light' | 'dark'
 type AppLanguage = 'de' | 'en'
-type SettingsSection = 'appearance' | 'language' | 'agent'
+type SettingsSection = 'appearance' | 'language' | 'import' | 'agent'
 type EditorFontChoice = 'system' | 'serif' | 'mono'
 type WorkspaceView = Exclude<ViewMode, 'settings'>
 type ImageResolver = (imagePath: string | undefined) => string | null
@@ -206,6 +211,20 @@ function normalizeLineEndings(value: string) {
   return value.replace(/\r\n?/g, '\n')
 }
 
+function stripMarkdownTitleSyntax(value: string) {
+  return value
+    .trim()
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^\*\*\s*(.*?)\s*\*\*$/, '$1')
+    .replace(/^__\s*(.*?)\s*__$/, '$1')
+    .replace(/^\*\s*(.*?)\s*\*$/, '$1')
+    .replace(/^_\s*(.*?)\s*_$/, '$1')
+    .replace(/^`+\s*(.*?)\s*`+$/, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .trim()
+}
+
 function buildItemContentPath(projectId: string, title: string, itemId: string) {
   const slug =
     slugify(
@@ -227,7 +246,7 @@ function splitItemContent(content: string) {
   }
 
   const firstMeaningfulLine = lines[firstMeaningfulIndex].trimStart()
-  const title = firstMeaningfulLine.replace(/^#{1,6}\s+/, '')
+  const title = stripMarkdownTitleSyntax(firstMeaningfulLine)
 
   let bodyLines = lines.slice(firstMeaningfulIndex + 1)
   if (/^#{1,6}\s+/.test(firstMeaningfulLine) && bodyLines[0]?.trim() === '') {
@@ -240,8 +259,25 @@ function splitItemContent(content: string) {
   }
 }
 
+function titleFromMarkdownFile(file: ImportedMarkdownFile) {
+  const normalized = normalizeLineEndings(file.content)
+  const firstLine = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean)
+  const heading = firstLine ? stripMarkdownTitleSyntax(firstLine) : null
+
+  const fileStem = file.name.replace(/\.(md|markdown)$/i, '').trim()
+  return (heading || fileStem || 'Importierter Zettel').slice(0, 120)
+}
+
+function summaryFromMarkdown(content: string) {
+  const { body } = splitItemContent(content)
+  return deriveSummary(body || content, '')
+}
+
 function composeItemContent(title: string, body: string) {
-  const nextTitle = title.replace(/^\s+/, '')
+  const nextTitle = stripMarkdownTitleSyntax(title).replace(/^\s+/, '')
   const nextBody = normalizeLineEndings(body).replace(/^\n+/, '')
 
   if (!nextTitle.trim()) {
@@ -272,13 +308,19 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
 
 function deriveItemFieldsFromContent(item: Item, content: string) {
   const { title, body } = splitItemContent(content)
-  const nextTitle = title.slice(0, 120) || item.title || 'Ohne Titel'
+  const nextTitle =
+    title.slice(0, 120) || stripMarkdownTitleSyntax(item.title) || 'Ohne Titel'
   return {
     title: nextTitle,
     content,
     summary: deriveSummary(body, ''),
     contentPath: buildItemContentPath(item.projectId, nextTitle, item.id),
   }
+}
+
+function getItemTitle(item: Item) {
+  const parsed = splitItemContent(item.content)
+  return parsed.title || stripMarkdownTitleSyntax(item.title) || 'Ohne Titel'
 }
 
 function removeItemFromPlanner(planner: PlannerData, itemId: string) {
@@ -507,6 +549,7 @@ function App() {
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>('appearance')
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
+  const [markdownImportMessage, setMarkdownImportMessage] = useState('')
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const [projectNameDraft, setProjectNameDraft] = useState('')
   const [settingsReturnView, setSettingsReturnView] =
@@ -1285,6 +1328,49 @@ function App() {
     setPageMode('write')
   }
 
+  async function importMarkdownIntoProject() {
+    if (!data || !activeProject) {
+      setMarkdownImportMessage('Waehle zuerst ein Projekt aus.')
+      return
+    }
+
+    const files = await importMarkdownFiles()
+    if (files.length === 0) {
+      setMarkdownImportMessage('Kein Markdown importiert.')
+      return
+    }
+
+    const now = new Date().toISOString()
+    const importedItems = files.map((file) => {
+      const id = `item-${nanoid(8)}`
+      const title = titleFromMarkdownFile(file)
+      const content = normalizeLineEndings(file.content)
+
+      return {
+        id,
+        projectId: activeProject.id,
+        title,
+        summary: summaryFromMarkdown(content),
+        contentPath: buildItemContentPath(activeProject.id, title, id),
+        content,
+        tags: [],
+        kind: 'script',
+        status: 'planung',
+        done: false,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies Item
+    })
+
+    commit({
+      ...data,
+      items: [...importedItems, ...data.items],
+    })
+    setExpandedCategories((current) => ({ ...current, skripte: true }))
+    setActiveItemId(importedItems[0]?.id ?? activeItemId)
+    setMarkdownImportMessage('Zettel erfolgreich importiert.')
+  }
+
   function renameItem(itemId: string, title: string) {
     const nextTitle = title.trim()
     if (!nextTitle) {
@@ -1331,6 +1417,17 @@ function App() {
     }
 
     recordCanvasHistorySnapshot()
+    commit(removeItemFromPlanner(data, itemId))
+    if (activeItemId === itemId) {
+      setActiveItemId(null)
+    }
+  }
+
+  function deleteBoardItem(itemId: string) {
+    if (!data || !activeBoard) {
+      return
+    }
+
     commit(removeItemFromPlanner(data, itemId))
     if (activeItemId === itemId) {
       setActiveItemId(null)
@@ -2050,7 +2147,7 @@ function App() {
                     emptyHint="Noch keine Zettel."
                     entries={projectScripts.map((item) => ({
                       id: item.id,
-                      label: item.title,
+                      label: getItemTitle(item),
                       active: view === 'page' && item.id === activeItem?.id,
                       onClick: () => openScript(item.id),
                       onRename: (value: string) => renameItem(item.id, value),
@@ -2087,6 +2184,15 @@ function App() {
               >
                 <Languages size={15} aria-hidden />
                 <span>{settingsCopy.language}</span>
+              </button>
+              <button
+                className="settings-dropup-row"
+                onClick={() => openSettings('import')}
+                role="menuitem"
+                type="button"
+              >
+                <Upload size={15} aria-hidden />
+                <span>{settingsCopy.import}</span>
               </button>
               <button
                 className="settings-dropup-row"
@@ -2149,11 +2255,14 @@ function App() {
             activeSection={settingsSection}
             appLanguage={appLanguage}
             appTheme={appTheme}
+            activeProjectName={activeProject?.name ?? null}
             editorFont={editorFont}
             editorFontSize={editorFontSize}
+            markdownImportMessage={markdownImportMessage}
             workspacePath={workspacePath}
             onEditorFontChange={setEditorFont}
             onEditorFontSizeChange={setEditorFontSize}
+            onImportMarkdown={importMarkdownIntoProject}
             onLanguageChange={setAppLanguage}
             onThemeChange={setAppTheme}
           />
@@ -2263,6 +2372,8 @@ function App() {
               setRightOpen(true)
             }}
             resolveImageSrc={resolveWorkspaceImage}
+            normalizeImageSrc={normalizeWorkspaceImageSrc}
+            onPickImage={pickImage}
             onUpdateItemContent={updateBoardItemContent}
             onMoveCard={moveCard}
             onAddColumn={addColumn}
@@ -2270,6 +2381,7 @@ function App() {
             onDeleteColumn={deleteColumn}
             onAddExistingToColumn={addBoardCardForItem}
             onCreateCardInColumn={addBoardCardAsNewScript}
+            onDeleteItem={deleteBoardItem}
             onToggleDone={(itemId) =>
               updateItem(itemId, (item) => ({ ...item, done: !item.done }))
             }
@@ -2320,13 +2432,6 @@ function App() {
           </div>
         </aside>
       )}
-
-      <footer className="statusbar">
-        <span>{workspacePath}</span>
-        <span>
-          {data.updatedAt ? new Date(data.updatedAt).toLocaleString() : ''}
-        </span>
-      </footer>
 
       {sidebarMenu && (
         <SidebarContextMenu
@@ -2608,6 +2713,7 @@ function getSettingsCopy(language: AppLanguage) {
       title: 'Settings',
       appearance: 'Appearance',
       language: 'Language',
+      import: 'Import',
       agent: 'Agent access',
       appearanceIntro:
         'Adjust theme, canvas contrast, and writing typography for the app.',
@@ -2630,8 +2736,16 @@ function getSettingsCopy(language: AppLanguage) {
         'This setting is ready for the broader app translation pass.',
       german: 'Deutsch',
       english: 'English',
+      markdownImportIntro:
+        'Bring existing Markdown notes into the currently selected project.',
+      markdownImport: 'Markdown files',
+      markdownImportDescription:
+        'Select one or more .md files. Tisch creates one Zettel per file.',
+      markdownImportTarget: 'Target',
+      markdownImportButton: 'Import Markdown',
+      markdownImportNoProject: 'Select a project before importing.',
       agentIntro:
-        'Local agents can use the Tisch CLI to create Zettels, canvases, nodes, and connections.',
+        'Local agents can use the Tisch CLI to create projects, Zettels, boards, canvases, nodes, and connections.',
       workspacePath: 'Workspace',
       workspacePathDescription:
         'The CLI writes to the same local workspace as this app.',
@@ -2649,6 +2763,7 @@ function getSettingsCopy(language: AppLanguage) {
     title: 'Einstellungen',
     appearance: 'Darstellung',
     language: 'Sprache',
+    import: 'Import',
     agent: 'Agent-Zugriff',
     appearanceIntro:
       'Passe Theme, Canvas-Kontrast und Schreibtypografie fuer die App an.',
@@ -2671,8 +2786,16 @@ function getSettingsCopy(language: AppLanguage) {
       'Diese Einstellung ist bereit fuer die breitere Uebersetzung der App.',
     german: 'Deutsch',
     english: 'English',
+    markdownImportIntro:
+      'Hole bestehende Markdown-Notizen in das aktuell ausgewaehlte Projekt.',
+    markdownImport: 'Markdown-Dateien',
+    markdownImportDescription:
+      'Waehle eine oder mehrere .md-Dateien. Tisch legt pro Datei einen Zettel an.',
+    markdownImportTarget: 'Ziel',
+    markdownImportButton: 'Markdown importieren',
+    markdownImportNoProject: 'Waehle vor dem Import ein Projekt aus.',
     agentIntro:
-      'Lokale Agenten koennen das Tisch-CLI nutzen, um Zettel, Canvases, Nodes und Verbindungen zu erstellen.',
+      'Lokale Agenten koennen das Tisch-CLI nutzen, um Projekte, Zettel, Boards, Canvases, Nodes und Verbindungen zu erstellen.',
     workspacePath: 'Workspace',
     workspacePathDescription:
       'Das CLI schreibt in denselben lokalen Workspace wie diese App.',
@@ -2733,6 +2856,18 @@ function SettingsSidebar({
         </button>
         <button
           className={
+            activeSection === 'import'
+              ? 'settings-nav-row active'
+              : 'settings-nav-row'
+          }
+          onClick={() => onSectionChange('import')}
+          type="button"
+        >
+          <Upload size={16} aria-hidden />
+          <span>{copy.import}</span>
+        </button>
+        <button
+          className={
             activeSection === 'agent'
               ? 'settings-nav-row active'
               : 'settings-nav-row'
@@ -2752,26 +2887,46 @@ function SettingsView({
   activeSection,
   appLanguage,
   appTheme,
+  activeProjectName,
   editorFont,
   editorFontSize,
+  markdownImportMessage,
   workspacePath,
   onEditorFontChange,
   onEditorFontSizeChange,
+  onImportMarkdown,
   onLanguageChange,
   onThemeChange,
 }: {
   activeSection: SettingsSection
   appLanguage: AppLanguage
   appTheme: AppTheme
+  activeProjectName: string | null
   editorFont: EditorFontChoice
   editorFontSize: number
+  markdownImportMessage: string
   workspacePath: string
   onEditorFontChange: (font: EditorFontChoice) => void
   onEditorFontSizeChange: (size: number) => void
+  onImportMarkdown: () => Promise<void>
   onLanguageChange: (language: AppLanguage) => void
   onThemeChange: (theme: AppTheme) => void
 }) {
   const copy = getSettingsCopy(appLanguage)
+  const [importingMarkdown, setImportingMarkdown] = useState(false)
+
+  async function handleImportMarkdown() {
+    if (importingMarkdown) {
+      return
+    }
+
+    setImportingMarkdown(true)
+    try {
+      await onImportMarkdown()
+    } finally {
+      setImportingMarkdown(false)
+    }
+  }
 
   return (
     <section className="settings-view">
@@ -2875,6 +3030,46 @@ function SettingsView({
                     label={copy.english}
                     onClick={() => onLanguageChange('en')}
                   />
+                </div>
+              </SettingGroup>
+            </div>
+          )}
+
+          {activeSection === 'import' && (
+            <div className="settings-section">
+              <div>
+                <h2>{copy.import}</h2>
+                <p>{copy.markdownImportIntro}</p>
+              </div>
+
+              <SettingGroup
+                title={copy.markdownImport}
+                description={
+                  activeProjectName
+                    ? `${copy.markdownImportDescription} ${copy.markdownImportTarget}: ${activeProjectName}.`
+                    : copy.markdownImportNoProject
+                }
+              >
+                <div className="settings-import-control">
+                  <button
+                    className="settings-action-button"
+                    disabled={!activeProjectName || importingMarkdown}
+                    onClick={handleImportMarkdown}
+                    type="button"
+                  >
+                    <Upload size={16} aria-hidden />
+                    <span>
+                      {importingMarkdown
+                        ? 'Importiere...'
+                        : copy.markdownImportButton}
+                    </span>
+                  </button>
+                  {markdownImportMessage && (
+                    <span className="settings-import-result">
+                      <Check size={14} aria-hidden />
+                      {markdownImportMessage}
+                    </span>
+                  )}
                 </div>
               </SettingGroup>
             </div>
@@ -3008,7 +3203,7 @@ function PageView({
   return (
     <section className="page-view">
       <div className="page-header">
-        <h1 className="page-title">{item.title}</h1>
+        <h1 className="page-title">{getItemTitle(item)}</h1>
       </div>
       <div className="page-actions" role="group" aria-label="Zettel-Orte">
         <button
@@ -3113,78 +3308,6 @@ function normalizeWorkspaceImageSrc(src: string) {
   }
 
   return src
-}
-
-function extractMarkdownImages(markdown: string) {
-  const images: { alt: string; src: string }[] = []
-  const pattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
-  let match: RegExpExecArray | null
-
-  while ((match = pattern.exec(markdown)) !== null) {
-    images.push({ alt: match[1] || 'Bild', src: match[2] })
-  }
-
-  return images
-}
-
-function extractMarkdownImageMarkdown(markdown: string) {
-  const images: string[] = []
-  const pattern = /!\[[^\]]*\]\([^)\s]+(?:\s+"[^"]*")?\)/g
-  let match: RegExpExecArray | null
-
-  while ((match = pattern.exec(markdown)) !== null) {
-    images.push(match[0])
-  }
-
-  return images
-}
-
-function removeMarkdownImages(markdown: string) {
-  return markdown
-    .replace(/!\[[^\]]*\]\([^)\s]+(?:\s+"[^"]*")?\)/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/^\n+/, '')
-}
-
-function mergeVisibleBodyWithImages(visibleBody: string, previousBody: string) {
-  const images = extractMarkdownImageMarkdown(previousBody)
-  if (images.length === 0) {
-    return visibleBody
-  }
-
-  const nextBody = normalizeLineEndings(visibleBody)
-  return [nextBody, ...images].filter(Boolean).join('\n\n')
-}
-
-function MarkdownImageStrip({
-  images,
-  resolveImageSrc,
-  variant,
-}: {
-  images: { alt: string; src: string }[]
-  resolveImageSrc: ImageResolver
-  variant: 'card' | 'node'
-}) {
-  if (images.length === 0) {
-    return null
-  }
-
-  return (
-    <div className={`markdown-image-strip markdown-image-strip--${variant}`}>
-      {images.map((image, index) => {
-        const src = resolveImageSrc(image.src) ?? image.src
-        return (
-          <img
-            alt={image.alt}
-            draggable={false}
-            key={`${image.src}-${index}`}
-            src={src}
-          />
-        )
-      })}
-    </div>
-  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -3540,6 +3663,8 @@ function CanvasView({
         connectionLineType={connectionLineType}
         connectionLineStyle={{ strokeWidth: 1.6 }}
         deleteKeyCode={null}
+        minZoom={0.12}
+        maxZoom={2.5}
         onEdgesChange={handleEdgesChange}
         onEdgeClick={(event, edge) => {
           event.stopPropagation()
@@ -3580,6 +3705,30 @@ function CanvasView({
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#d7d9df" gap={24} />
+        {canvas.nodes.length > 0 && (
+          <MiniMap
+            ariaLabel="Canvas-Übersicht"
+            bgColor="var(--color-bg)"
+            maskColor="color-mix(in srgb, var(--color-bg) 68%, transparent)"
+            maskStrokeColor="var(--color-accent)"
+            maskStrokeWidth={1.2}
+            nodeBorderRadius={10}
+            nodeColor={(node) =>
+              node.selected
+                ? 'var(--color-accent-soft)'
+                : 'var(--color-bg-secondary)'
+            }
+            nodeStrokeColor={(node) =>
+              node.selected ? 'var(--color-accent)' : 'var(--color-border-strong)'
+            }
+            nodeStrokeWidth={1.4}
+            offsetScale={7}
+            pannable
+            style={{ height: 132, width: 190 }}
+            zoomable
+            zoomStep={0.7}
+          />
+        )}
       </ReactFlow>
 
       <CanvasQuickActions
@@ -3587,7 +3736,7 @@ function CanvasView({
         onDeleteSelectedEdges={deleteSelectedEdges}
         onOpenAdd={() => setAddOpen(true)}
       />
-      <CanvasZoomControls />
+      <CanvasZoomControls hasNodes={canvas.nodes.length > 0} />
       <CanvasHistoryControls
         canUndo={canUndo}
         canRedo={canRedo}
@@ -3660,8 +3809,8 @@ function CanvasQuickActions({
   )
 }
 
-function CanvasZoomControls() {
-  const { zoomIn, zoomOut, getViewport, setViewport } = useReactFlow()
+function CanvasZoomControls({ hasNodes }: { hasNodes: boolean }) {
+  const { zoomIn, zoomOut, getViewport, setViewport, fitView } = useReactFlow()
   const [zoom, setZoom] = useState(100)
 
   useEffect(() => {
@@ -3675,6 +3824,19 @@ function CanvasZoomControls() {
   function resetView() {
     const vp: Viewport = getViewport()
     setViewport({ ...vp, zoom: 1 })
+  }
+
+  function fitCanvas() {
+    if (!hasNodes) {
+      return
+    }
+
+    fitView({
+      duration: 420,
+      maxZoom: 1.15,
+      minZoom: 0.12,
+      padding: 0.18,
+    })
   }
 
   return (
@@ -3691,6 +3853,14 @@ function CanvasZoomControls() {
       </button>
       <button className="zoom-button" onClick={() => zoomIn()} title="Größer">
         <Plus size={14} />
+      </button>
+      <button
+        className="zoom-button"
+        disabled={!hasNodes}
+        onClick={fitCanvas}
+        title="Alles anzeigen"
+      >
+        <LocateFixed size={14} />
       </button>
     </div>
   )
@@ -3771,6 +3941,8 @@ function BoardView({
   onOpenItem,
   onOpenInspectorItem,
   resolveImageSrc,
+  normalizeImageSrc,
+  onPickImage,
   onUpdateItemContent,
   onMoveCard,
   onAddColumn,
@@ -3778,6 +3950,7 @@ function BoardView({
   onDeleteColumn,
   onAddExistingToColumn,
   onCreateCardInColumn,
+  onDeleteItem,
   onToggleDone,
 }: {
   board: Board
@@ -3791,6 +3964,8 @@ function BoardView({
   onOpenItem: (id: string) => void
   onOpenInspectorItem: (id: string) => void
   resolveImageSrc: ImageResolver
+  normalizeImageSrc: (src: string) => string
+  onPickImage: () => Promise<string | null>
   onUpdateItemContent: (itemId: string, content: string) => void
   onMoveCard: (
     cardId: string,
@@ -3802,6 +3977,7 @@ function BoardView({
   onDeleteColumn: (columnId: string) => void
   onAddExistingToColumn: (columnId: string, itemId: string) => void
   onCreateCardInColumn: (columnId: string, title: string) => void
+  onDeleteItem: (itemId: string) => void
   onToggleDone: (itemId: string) => void
 }) {
   const takenItemIds = new Set(board.cards.map((card) => card.itemId))
@@ -3866,7 +4042,7 @@ function BoardView({
           const target = event.target as HTMLElement
           if (
             target.closest(
-              '.work-card, .column-add-button, .item-picker, .kanban-column header',
+              '.work-card, .column-add-button, .item-picker, .kanban-column header, .board-add-column',
             )
           ) {
             return
@@ -3896,6 +4072,8 @@ function BoardView({
               onOpenItem={onOpenItem}
               onOpenInspectorItem={onOpenInspectorItem}
               resolveImageSrc={resolveImageSrc}
+              normalizeImageSrc={normalizeImageSrc}
+              onPickImage={onPickImage}
               onUpdateItemContent={onUpdateItemContent}
               draggingCardId={draggingCardId}
               getDraggedCardId={() => draggingCardIdRef.current}
@@ -3920,10 +4098,19 @@ function BoardView({
                 onAddExistingToColumn(column.id, itemId)
               }
               onCreateNew={(title) => onCreateCardInColumn(column.id, title)}
+              onDeleteItem={onDeleteItem}
               onToggleDone={onToggleDone}
             />
           )
         })}
+        <button
+          className="board-add-column"
+          onClick={onAddColumn}
+          type="button"
+        >
+          <Plus size={16} aria-hidden />
+          <span>Spalte hinzufügen</span>
+        </button>
       </div>
     </section>
   )
@@ -3967,6 +4154,8 @@ function BoardColumn({
   onOpenItem,
   onOpenInspectorItem,
   resolveImageSrc,
+  normalizeImageSrc,
+  onPickImage,
   onUpdateItemContent,
   draggingCardId,
   getDraggedCardId,
@@ -3980,6 +4169,7 @@ function BoardColumn({
   onDelete,
   onAddExisting,
   onCreateNew,
+  onDeleteItem,
   onToggleDone,
 }: {
   column: { id: string; title: string }
@@ -3991,6 +4181,8 @@ function BoardColumn({
   onOpenItem: (id: string) => void
   onOpenInspectorItem: (id: string) => void
   resolveImageSrc: ImageResolver
+  normalizeImageSrc: (src: string) => string
+  onPickImage: () => Promise<string | null>
   onUpdateItemContent: (itemId: string, content: string) => void
   draggingCardId: string | null
   getDraggedCardId: () => string | null
@@ -4004,6 +4196,7 @@ function BoardColumn({
   onDelete: () => void
   onAddExisting: (itemId: string) => void
   onCreateNew: (title: string) => void
+  onDeleteItem: (itemId: string) => void
   onToggleDone: (itemId: string) => void
 }) {
   const [adderOpen, setAdderOpen] = useState(false)
@@ -4135,7 +4328,10 @@ function BoardColumn({
                   item={item}
                   onFocus={() => onSelectItem(item.id)}
                   onOpen={() => onOpenItem(item.id)}
+                  onPickImage={onPickImage}
+                  onDelete={() => onDeleteItem(item.id)}
                   resolveImageSrc={resolveImageSrc}
+                  normalizeImageSrc={normalizeImageSrc}
                   onUpdateContent={onUpdateItemContent}
                   onToggleDone={onToggleDone}
                 />
@@ -4187,37 +4383,61 @@ function BoardCardEditor({
   item,
   onFocus,
   onOpen,
+  onPickImage,
+  onDelete,
   resolveImageSrc,
+  normalizeImageSrc,
   onUpdateContent,
   onToggleDone,
 }: {
   item: Item
   onFocus: () => void
   onOpen: () => void
+  onPickImage: () => Promise<string | null>
+  onDelete: () => void
   resolveImageSrc: ImageResolver
+  normalizeImageSrc: (src: string) => string
   onUpdateContent: (itemId: string, content: string) => void
   onToggleDone: (itemId: string) => void
 }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const bodyEditorRef = useRef<CanvasMarkdownEditorHandle | null>(null)
   const { title, body } = useMemo(
     () => splitItemContent(item.content),
     [item.content],
   )
-  const images = useMemo(() => extractMarkdownImages(body), [body])
-  const visibleBody = useMemo(() => removeMarkdownImages(body), [body])
 
   function updateTitle(nextTitle: string) {
     onUpdateContent(item.id, composeItemContent(nextTitle, body))
   }
 
   function updateBody(nextBody: string) {
-    onUpdateContent(
-      item.id,
-      composeItemContent(title, mergeVisibleBodyWithImages(nextBody, body)),
-    )
+    onUpdateContent(item.id, composeItemContent(title, nextBody))
   }
 
+  useEffect(() => {
+    if (!menuOpen) {
+      return
+    }
+
+    function closeMenu() {
+      setMenuOpen(false)
+    }
+
+    window.addEventListener('pointerdown', closeMenu)
+    return () => window.removeEventListener('pointerdown', closeMenu)
+  }, [menuOpen])
+
   return (
-    <>
+    <div
+      className="work-card-editor"
+      onContextMenu={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        setMenuOpen(true)
+      }}
+      onFocusCapture={onFocus}
+    >
       <div className="card-title-row">
         <input
           className="work-card-title"
@@ -4267,23 +4487,54 @@ function BoardCardEditor({
           </button>
         </div>
       </div>
-      <textarea
-        className="work-card-body"
-        placeholder="Hier direkt weiterdenken…"
-        value={visibleBody}
-        onChange={(event) => updateBody(event.target.value)}
-        onClick={(event) => event.stopPropagation()}
-        onDoubleClick={(event) => event.stopPropagation()}
-        onFocus={onFocus}
-        onKeyDown={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-      />
-      <MarkdownImageStrip
-        images={images}
+      <CanvasMarkdownEditor
+        ref={bodyEditorRef}
+        content={body}
+        itemId={item.id}
+        normalizeImageSrc={normalizeImageSrc}
+        onChange={updateBody}
+        onPickImage={onPickImage}
+        placeholder="Hier direkt weiterdenken..."
         resolveImageSrc={resolveImageSrc}
-        variant="card"
       />
-    </>
+      {menuOpen && (
+        <div
+          className="canvas-note-menu work-card-menu"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            className="canvas-note-menu-item"
+            onMouseDown={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+            onClick={async (event) => {
+              event.stopPropagation()
+              await bodyEditorRef.current?.insertImage()
+              setMenuOpen(false)
+            }}
+          >
+            <Plus size={12} />
+            Bild hinzufügen
+          </button>
+          <button
+            className="canvas-note-menu-item danger"
+            onMouseDown={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+            onClick={(event) => {
+              event.stopPropagation()
+              setMenuOpen(false)
+              onDelete()
+            }}
+          >
+            <Trash2 size={12} />
+            Löschen
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -4308,7 +4559,7 @@ function InlineItemPicker({
   const trimmed = query.trim()
   const matches = trimmed
     ? items.filter((item) =>
-        item.title.toLowerCase().includes(trimmed.toLowerCase()),
+        getItemTitle(item).toLowerCase().includes(trimmed.toLowerCase()),
       )
     : items.slice(0, 6)
 
@@ -4341,7 +4592,7 @@ function InlineItemPicker({
             onClick={() => onSelectExisting(item.id)}
           >
             <FileText size={13} />
-            <span>{item.title}</span>
+            <span>{getItemTitle(item)}</span>
             <small>
               {item.kind === 'script' ? 'Zettel' : 'Canvas'}
             </small>
@@ -4349,7 +4600,7 @@ function InlineItemPicker({
         ))}
         {trimmed &&
           !matches.some(
-            (item) => item.title.toLowerCase() === trimmed.toLowerCase(),
+            (item) => getItemTitle(item).toLowerCase() === trimmed.toLowerCase(),
           ) && (
             <button
               className="item-picker-row create"
@@ -4484,7 +4735,7 @@ function Inspector({
     <>
       <section className="inspector-card">
         <span className="eyebrow">Zettel</span>
-        <h2>{item.title}</h2>
+        <h2>{getItemTitle(item)}</h2>
         {item.summary && <p>{item.summary}</p>}
         <dl className="detail-list">
           <div>
@@ -4850,7 +5101,9 @@ function CanvasNoteNode({
   const parsedContent = useMemo(() => splitItemContent(data.content), [data.content])
   const title =
     parsedContent.title ||
-    (!data.content.trim() && data.title === 'Ohne Titel' ? '' : data.title)
+    (!data.content.trim() && data.title === 'Ohne Titel'
+      ? ''
+      : stripMarkdownTitleSyntax(data.title))
   const body = parsedContent.body
   const [menuOpen, setMenuOpen] = useState(false)
 

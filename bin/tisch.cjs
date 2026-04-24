@@ -9,6 +9,11 @@ function usage() {
   tisch project list
   tisch project create --name <name> [--description <text>] [--accent <color>]
   tisch zettel create --project <id-or-name> --title <title> [--body <text>|--body-file <path>] [--tag <tag>]
+  tisch board list [--project <id-or-name>]
+  tisch board create --project <id-or-name> --title <title> [--column <title> ...]
+  tisch board add-column --board <id-or-title> --title <title> [--project <id-or-name>]
+  tisch board add-card --board <id-or-title> --column <id-or-title> [--item <id-or-title>|--title <title>] [--body <text>|--body-file <path>] [--project <id-or-name>]
+  tisch board move-card --board <id-or-title> --card <id-or-item-or-title> --column <id-or-title> [--before <card-or-item-or-title>] [--project <id-or-name>]
   tisch canvas list [--project <id-or-name>]
   tisch canvas create --project <id-or-name> --title <title>
   tisch canvas add-node --canvas <id-or-title> --title <title> [--body <text>|--body-file <path>] [--x <n>] [--y <n>]
@@ -79,6 +84,13 @@ function asArray(value) {
   return Array.isArray(value) ? value.map(String) : [String(value)]
 }
 
+function csvOrArray(value) {
+  return asArray(value)
+    .flatMap((entry) => entry.split(','))
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
 function readBody(options) {
   if (options['body-file']) {
     return fs.readFileSync(String(options['body-file']), 'utf8')
@@ -138,6 +150,7 @@ function run(argv) {
       plannerPath: store.getPlannerPath(store.getDefaultWorkspaceDir()),
       projects: planner.projects.length,
       items: planner.items.length,
+      boards: planner.boards.length,
       canvases: planner.canvases.length,
     })
     return
@@ -178,6 +191,102 @@ function run(argv) {
       }),
     )
     printJson({ item: result.item, updatedAt: result.saved.updatedAt })
+    return
+  }
+
+  if (area === 'board' && action === 'list') {
+    const planner = loadPlanner()
+    const project = options.project
+      ? resolveProject(planner, String(options.project))
+      : null
+    const boards = project
+      ? planner.boards.filter((board) => board.projectId === project.id)
+      : planner.boards
+    printJson(boards)
+    return
+  }
+
+  if (area === 'board' && action === 'create') {
+    const result = mutatePlanner((planner) =>
+      store.createBoard(planner, {
+        project: required(options, 'project'),
+        title: required(options, 'title'),
+        columns: csvOrArray(options.column),
+      }),
+    )
+    printJson({ board: result.board, updatedAt: result.saved.updatedAt })
+    return
+  }
+
+  if (area === 'board' && action === 'add-column') {
+    const result = mutatePlanner((planner) => {
+      const project = options.project
+        ? resolveProject(planner, String(options.project))
+        : null
+      const next = store.addBoardColumn(planner, {
+        board: required(options, 'board'),
+        projectId: project?.id,
+        title: required(options, 'title'),
+        forceNew: Boolean(options['force-new']),
+      })
+      return next.created ? next : { ...next, planner: null }
+    })
+    printJson({
+      created: result.created,
+      boardId: result.boardId,
+      column: result.column,
+      updatedAt: result.saved.updatedAt,
+    })
+    return
+  }
+
+  if (area === 'board' && action === 'add-card') {
+    const result = mutatePlanner((planner) => {
+      const project = options.project
+        ? resolveProject(planner, String(options.project))
+        : null
+      const item = options.item ? String(options.item) : undefined
+      const title = item ? options.title : required(options, 'title')
+      const next = store.addBoardCard(planner, {
+        board: required(options, 'board'),
+        projectId: project?.id,
+        column: required(options, 'column'),
+        item,
+        title: title ? String(title) : undefined,
+        body: readBody(options),
+        tags: asArray(options.tag),
+        allowDuplicate: Boolean(options['allow-duplicate']),
+      })
+      return next.created ? next : { ...next, planner: null }
+    })
+    printJson({
+      created: result.created,
+      boardId: result.boardId,
+      card: result.card,
+      item: result.item,
+      updatedAt: result.saved.updatedAt,
+    })
+    return
+  }
+
+  if (area === 'board' && action === 'move-card') {
+    const result = mutatePlanner((planner) => {
+      const project = options.project
+        ? resolveProject(planner, String(options.project))
+        : null
+      return store.moveBoardCard(planner, {
+        board: required(options, 'board'),
+        projectId: project?.id,
+        card: required(options, 'card'),
+        column: required(options, 'column'),
+        before: options.before ? String(options.before) : undefined,
+      })
+    })
+    printJson({
+      boardId: result.boardId,
+      card: result.card,
+      updatedAt: result.saved.updatedAt,
+    })
     return
   }
 

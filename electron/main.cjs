@@ -224,6 +224,31 @@ async function pickImage() {
   return importImage(result.filePaths[0])
 }
 
+async function importMarkdownFiles() {
+  const win = BrowserWindow.getFocusedWindow()
+  const result = await dialog.showOpenDialog(win ?? undefined, {
+    title: 'Markdown-Dateien importieren',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      {
+        name: 'Markdown',
+        extensions: ['md', 'markdown'],
+      },
+    ],
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return []
+  }
+
+  return result.filePaths
+    .filter((filePath) => /\.(md|markdown)$/i.test(filePath))
+    .map((filePath) => ({
+      name: path.basename(filePath),
+      content: fs.readFileSync(filePath, 'utf8'),
+    }))
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1480,
@@ -263,6 +288,7 @@ app.whenReady().then(() => {
   ipcMain.handle('planner:loadWorkspace', () => loadWorkspace())
   ipcMain.handle('planner:saveWorkspace', (_event, data) => saveWorkspace(data))
   ipcMain.handle('planner:pickImage', () => pickImage())
+  ipcMain.handle('planner:importMarkdownFiles', () => importMarkdownFiles())
 
   createWindow()
 

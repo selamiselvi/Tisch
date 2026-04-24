@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('planner', {
   loadWorkspace: () => ipcRenderer.invoke('planner:loadWorkspace'),
   saveWorkspace: (data) => ipcRenderer.invoke('planner:saveWorkspace', data),
   pickImage: () => ipcRenderer.invoke('planner:pickImage'),
+  importMarkdownFiles: () => ipcRenderer.invoke('planner:importMarkdownFiles'),
   onWorkspaceChanged: (callback) => {
     const listener = () => callback()
     ipcRenderer.on('planner:workspaceChanged', listener)
