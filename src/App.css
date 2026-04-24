@@ -1054,6 +1054,7 @@ img.category-icon {
   border-radius: 22px;
   box-shadow: 0 10px 24px rgb(28 25 23 / 0.06);
   box-sizing: border-box;
+  cursor: grab;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1067,6 +1068,14 @@ img.category-icon {
   box-shadow:
     0 10px 24px rgb(28 25 23 / 0.06),
     0 0 0 1px color-mix(in srgb, var(--color-border-strong) 18%, transparent);
+}
+
+.canvas-note-node.is-editing {
+  cursor: auto;
+}
+
+.react-flow__node.dragging .canvas-note-node {
+  cursor: grabbing;
 }
 
 .canvas-note-header {
@@ -1093,6 +1102,19 @@ img.category-icon {
 }
 
 .canvas-note-title::placeholder {
+  color: var(--color-text-soft);
+}
+
+.canvas-note-title-static {
+  cursor: inherit;
+  min-height: 23px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.canvas-note-title-static.is-empty {
   color: var(--color-text-soft);
 }
 
@@ -1137,6 +1159,11 @@ img.category-icon {
   min-height: 0;
   overflow: auto;
   scrollbar-width: none;
+}
+
+.canvas-note-editor-shell:not(.nodrag) {
+  overflow: hidden;
+  user-select: none;
 }
 
 .canvas-note-editor-shell::-webkit-scrollbar {
@@ -2611,14 +2638,33 @@ img.category-icon {
   border-radius: 8px;
   display: flex;
   gap: 12px;
-  max-width: 320px;
   min-height: 42px;
   padding: 0 12px;
+}
+
+.settings-range-stack {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+}
+
+.settings-range-row span {
+  color: var(--color-text);
+  font-size: 13px;
+  min-width: 132px;
 }
 
 .settings-range-row input {
   accent-color: var(--color-accent);
   flex: 1;
+}
+
+.settings-range-row output {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 112px;
+  text-align: right;
 }
 
 .settings-import-control {

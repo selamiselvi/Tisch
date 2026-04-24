@@ -59,10 +59,13 @@ interface CanvasMarkdownEditorProps {
   itemId: string
   placeholder?: string
   autoFocus?: boolean
+  editable?: boolean
   onPickImage?: () => Promise<string | null>
   normalizeImageSrc?: (src: string) => string
   resolveImageSrc?: (src: string) => string | null
   onAutoFocusHandled?: () => void
+  onBlur?: () => void
+  onEscape?: () => void
   onChange: (content: string) => void
 }
 
@@ -513,15 +516,19 @@ export const CanvasMarkdownEditor = forwardRef<
     itemId,
     placeholder = 'Schreib hier...',
     autoFocus = false,
+    editable = true,
     onPickImage,
     normalizeImageSrc,
     resolveImageSrc,
     onAutoFocusHandled,
+    onBlur,
+    onEscape,
     onChange,
   },
   ref,
 ) {
   const lastEmitted = useRef(content)
+  const onBlurRef = useRef(onBlur)
   const editorContent = useMemo(
     () =>
       resolveImageSrc
@@ -540,6 +547,7 @@ export const CanvasMarkdownEditor = forwardRef<
   const editor: TiptapEditor | null = useEditor({
     content: editorContent,
     contentType: 'markdown',
+    editable,
     extensions,
     editorProps: {
       attributes: {
@@ -565,7 +573,14 @@ export const CanvasMarkdownEditor = forwardRef<
       lastEmitted.current = markdown
       onChange(markdown)
     },
+    onBlur: () => {
+      onBlurRef.current?.()
+    },
   })
+
+  useEffect(() => {
+    onBlurRef.current = onBlur
+  }, [onBlur])
 
   useImperativeHandle(
     ref,
@@ -593,6 +608,14 @@ export const CanvasMarkdownEditor = forwardRef<
     }),
     [editor, onPickImage, resolveImageSrc],
   )
+
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    editor.setEditable(editable)
+  }, [editable, editor])
 
   useEffect(() => {
     if (!editor) {
@@ -652,9 +675,25 @@ export const CanvasMarkdownEditor = forwardRef<
 
   return (
     <div
-      className="canvas-note-editor-shell nodrag nowheel"
-      onKeyDown={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
+      className={
+        editable
+          ? 'canvas-note-editor-shell nodrag nowheel'
+          : 'canvas-note-editor-shell'
+      }
+      onKeyDown={(event) => {
+        if (editable) {
+          event.stopPropagation()
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onEscape?.()
+          }
+        }
+      }}
+      onPointerDown={(event) => {
+        if (editable) {
+          event.stopPropagation()
+        }
+      }}
     >
       <EditorContent editor={editor} />
     </div>

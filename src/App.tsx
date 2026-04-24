@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import {
   Background,
   ConnectionLineType,
@@ -44,6 +50,7 @@ import {
   Palette,
   Plus,
   Settings,
+  SlidersHorizontal,
   Sun,
   Trash2,
   Type,
@@ -86,7 +93,12 @@ type CategoryId = 'canvas' | 'board' | 'skripte'
 type CanvasEdgeStyle = 'bezier' | 'smoothstep' | 'straight'
 type AppTheme = 'light' | 'dark'
 type AppLanguage = 'de' | 'en'
-type SettingsSection = 'appearance' | 'language' | 'import' | 'agent'
+type SettingsSection =
+  | 'appearance'
+  | 'interaction'
+  | 'language'
+  | 'import'
+  | 'agent'
 type EditorFontChoice = 'system' | 'serif' | 'mono'
 type WorkspaceView = Exclude<ViewMode, 'settings'>
 type ImageResolver = (imagePath: string | undefined) => string | null
@@ -110,12 +122,18 @@ const appThemeStorageKey = 'tisch.appTheme'
 const appLanguageStorageKey = 'tisch.appLanguage'
 const editorFontStorageKey = 'tisch.editorFont'
 const editorFontSizeStorageKey = 'tisch.editorFontSize'
+const canvasPanSpeedStorageKey = 'tisch.canvasPanSpeed'
+const canvasZoomSpeedStorageKey = 'tisch.canvasZoomSpeed'
 const defaultSidebarWidth = 236
 const defaultSidebarProjectsHeight = 202
 const minSidebarWidth = 200
 const maxSidebarWidth = 380
 const minSidebarProjectsHeight = 142
 const defaultEditorFontSize = 16
+const defaultCanvasPanSpeed = 100
+const defaultCanvasZoomSpeed = 100
+const canvasMinZoom = 0.12
+const canvasMaxZoom = 2.5
 
 const editorFontFamilies: Record<EditorFontChoice, string> = {
   system:
@@ -127,6 +145,30 @@ const editorFontFamilies: Record<EditorFontChoice, string> = {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
+}
+
+function normalizeWheelDelta(value: number, mode: number, pageSize: number) {
+  if (mode === WheelEvent.DOM_DELTA_LINE) {
+    return value * 16
+  }
+
+  if (mode === WheelEvent.DOM_DELTA_PAGE) {
+    return value * pageSize
+  }
+
+  return value
+}
+
+function isLikelyTrackpadPan(event: WheelEvent) {
+  if (event.ctrlKey || event.metaKey) {
+    return false
+  }
+
+  if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) {
+    return false
+  }
+
+  return Math.abs(event.deltaX) > 0 || Math.abs(event.deltaY) < 80
 }
 
 function getMaxSidebarProjectsHeight() {
@@ -546,6 +588,22 @@ function App() {
       19,
     ),
   )
+  const [canvasPanSpeed, setCanvasPanSpeed] = useState(() =>
+    readStoredLayoutNumber(
+      canvasPanSpeedStorageKey,
+      defaultCanvasPanSpeed,
+      50,
+      200,
+    ),
+  )
+  const [canvasZoomSpeed, setCanvasZoomSpeed] = useState(() =>
+    readStoredLayoutNumber(
+      canvasZoomSpeedStorageKey,
+      defaultCanvasZoomSpeed,
+      50,
+      200,
+    ),
+  )
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>('appearance')
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false)
@@ -608,6 +666,14 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(editorFontSizeStorageKey, String(editorFontSize))
   }, [editorFontSize])
+
+  useEffect(() => {
+    window.localStorage.setItem(canvasPanSpeedStorageKey, String(canvasPanSpeed))
+  }, [canvasPanSpeed])
+
+  useEffect(() => {
+    window.localStorage.setItem(canvasZoomSpeedStorageKey, String(canvasZoomSpeed))
+  }, [canvasZoomSpeed])
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -2178,6 +2244,15 @@ function App() {
               </button>
               <button
                 className="settings-dropup-row"
+                onClick={() => openSettings('interaction')}
+                role="menuitem"
+                type="button"
+              >
+                <SlidersHorizontal size={15} aria-hidden />
+                <span>{settingsCopy.interaction}</span>
+              </button>
+              <button
+                className="settings-dropup-row"
                 onClick={() => openSettings('language')}
                 role="menuitem"
                 type="button"
@@ -2256,10 +2331,18 @@ function App() {
             appLanguage={appLanguage}
             appTheme={appTheme}
             activeProjectName={activeProject?.name ?? null}
+            canvasPanSpeed={canvasPanSpeed}
+            canvasZoomSpeed={canvasZoomSpeed}
             editorFont={editorFont}
             editorFontSize={editorFontSize}
             markdownImportMessage={markdownImportMessage}
             workspacePath={workspacePath}
+            onCanvasPanSpeedChange={(speed) =>
+              setCanvasPanSpeed(clamp(speed, 50, 200))
+            }
+            onCanvasZoomSpeedChange={(speed) =>
+              setCanvasZoomSpeed(clamp(speed, 50, 200))
+            }
             onEditorFontChange={setEditorFont}
             onEditorFontSizeChange={setEditorFontSize}
             onImportMarkdown={importMarkdownIntoProject}
@@ -2343,6 +2426,8 @@ function App() {
               inspectorOpen={rightOpen}
               onToggleInspector={() => setRightOpen((open) => !open)}
               edgeStyle={canvasEdgeStyle}
+              panSpeed={canvasPanSpeed / 100}
+              zoomSpeed={canvasZoomSpeed / 100}
             />
           </ReactFlowProvider>
         )}
@@ -2712,6 +2797,7 @@ function getSettingsCopy(language: AppLanguage) {
       back: 'Back',
       title: 'Settings',
       appearance: 'Appearance',
+      interaction: 'Controls',
       language: 'Language',
       import: 'Import',
       agent: 'Agent access',
@@ -2729,6 +2815,14 @@ function getSettingsCopy(language: AppLanguage) {
       mono: 'Mono',
       editorSize: 'Editor size',
       editorSizeDescription: (size: number) => `${size}px base size`,
+      interactionIntro:
+        'Tune how quickly the canvas moves when you use the trackpad or mouse wheel.',
+      canvasNavigation: 'Canvas navigation',
+      canvasNavigationDescription:
+        'Separate speeds for trackpad panning and wheel zooming.',
+      canvasPanSpeed: 'Pan speed',
+      canvasZoomSpeed: 'Zoom speed',
+      canvasSpeedDescription: (speed: number) => `${speed}% speed`,
       languageIntro:
         'Choose the app language. New settings text responds immediately.',
       appLanguage: 'App language',
@@ -2762,6 +2856,7 @@ function getSettingsCopy(language: AppLanguage) {
     back: 'Zurueck',
     title: 'Einstellungen',
     appearance: 'Darstellung',
+    interaction: 'Bedienung',
     language: 'Sprache',
     import: 'Import',
     agent: 'Agent-Zugriff',
@@ -2779,6 +2874,14 @@ function getSettingsCopy(language: AppLanguage) {
     mono: 'Mono',
     editorSize: 'Editor-Groesse',
     editorSizeDescription: (size: number) => `${size}px Basisgroesse`,
+    interactionIntro:
+      'Stelle ein, wie schnell sich das Canvas mit Trackpad oder Mausrad bewegt.',
+    canvasNavigation: 'Canvas-Navigation',
+    canvasNavigationDescription:
+      'Getrennte Geschwindigkeiten fuer Trackpad-Panning und Mausrad-Zoom.',
+    canvasPanSpeed: 'Pan-Geschwindigkeit',
+    canvasZoomSpeed: 'Zoom-Geschwindigkeit',
+    canvasSpeedDescription: (speed: number) => `${speed}% Geschwindigkeit`,
     languageIntro:
       'Waehle die App-Sprache. Neue Einstellungstexte reagieren direkt.',
     appLanguage: 'App-Sprache',
@@ -2844,6 +2947,18 @@ function SettingsSidebar({
         </button>
         <button
           className={
+            activeSection === 'interaction'
+              ? 'settings-nav-row active'
+              : 'settings-nav-row'
+          }
+          onClick={() => onSectionChange('interaction')}
+          type="button"
+        >
+          <SlidersHorizontal size={16} aria-hidden />
+          <span>{copy.interaction}</span>
+        </button>
+        <button
+          className={
             activeSection === 'language'
               ? 'settings-nav-row active'
               : 'settings-nav-row'
@@ -2888,10 +3003,14 @@ function SettingsView({
   appLanguage,
   appTheme,
   activeProjectName,
+  canvasPanSpeed,
+  canvasZoomSpeed,
   editorFont,
   editorFontSize,
   markdownImportMessage,
   workspacePath,
+  onCanvasPanSpeedChange,
+  onCanvasZoomSpeedChange,
   onEditorFontChange,
   onEditorFontSizeChange,
   onImportMarkdown,
@@ -2902,10 +3021,14 @@ function SettingsView({
   appLanguage: AppLanguage
   appTheme: AppTheme
   activeProjectName: string | null
+  canvasPanSpeed: number
+  canvasZoomSpeed: number
   editorFont: EditorFontChoice
   editorFontSize: number
   markdownImportMessage: string
   workspacePath: string
+  onCanvasPanSpeedChange: (speed: number) => void
+  onCanvasZoomSpeedChange: (speed: number) => void
   onEditorFontChange: (font: EditorFontChoice) => void
   onEditorFontSizeChange: (size: number) => void
   onImportMarkdown: () => Promise<void>
@@ -3001,6 +3124,53 @@ function SettingsView({
                     type="range"
                     value={editorFontSize}
                   />
+                </div>
+              </SettingGroup>
+            </div>
+          )}
+
+          {activeSection === 'interaction' && (
+            <div className="settings-section">
+              <div>
+                <h2>{copy.interaction}</h2>
+                <p>{copy.interactionIntro}</p>
+              </div>
+
+              <SettingGroup
+                title={copy.canvasNavigation}
+                description={copy.canvasNavigationDescription}
+              >
+                <div className="settings-range-stack">
+                  <label className="settings-range-row">
+                    <SlidersHorizontal size={16} aria-hidden />
+                    <span>{copy.canvasPanSpeed}</span>
+                    <input
+                      max={200}
+                      min={50}
+                      onChange={(event) =>
+                        onCanvasPanSpeedChange(Number(event.target.value))
+                      }
+                      step={5}
+                      type="range"
+                      value={canvasPanSpeed}
+                    />
+                    <output>{copy.canvasSpeedDescription(canvasPanSpeed)}</output>
+                  </label>
+                  <label className="settings-range-row">
+                    <Type size={16} aria-hidden />
+                    <span>{copy.canvasZoomSpeed}</span>
+                    <input
+                      max={200}
+                      min={50}
+                      onChange={(event) =>
+                        onCanvasZoomSpeedChange(Number(event.target.value))
+                      }
+                      step={5}
+                      type="range"
+                      value={canvasZoomSpeed}
+                    />
+                    <output>{copy.canvasSpeedDescription(canvasZoomSpeed)}</output>
+                  </label>
                 </div>
               </SettingGroup>
             </div>
@@ -3347,6 +3517,8 @@ function CanvasView({
   inspectorOpen,
   onToggleInspector,
   edgeStyle,
+  panSpeed,
+  zoomSpeed,
 }: {
   canvas: IdeaCanvas
   items: Item[]
@@ -3380,8 +3552,12 @@ function CanvasView({
   inspectorOpen: boolean
   onToggleInspector: () => void
   edgeStyle: CanvasEdgeStyle
+  panSpeed: number
+  zoomSpeed: number
 }) {
-  const { screenToFlowPosition, setCenter } = useReactFlow()
+  const { getViewport, screenToFlowPosition, setCenter, setViewport } =
+    useReactFlow()
+  const flowWrapperRef = useRef<HTMLDivElement | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<Set<string>>(
     () => new Set(),
@@ -3515,6 +3691,95 @@ function CanvasView({
     setSelectedEdgeIds(new Set())
     onDeleteEdges(edgeIds)
   }, [activeSelectedEdgeIds, onDeleteEdges])
+
+  const handleCanvasWheel = useCallback(
+    (event: WheelEvent) => {
+      const target = event.target
+      if (
+        target instanceof Element &&
+        target.closest(
+          [
+            '.nowheel',
+            '.canvas-note-menu',
+            '.react-flow__minimap',
+            'input',
+            'textarea',
+            'select',
+            '[contenteditable="true"]',
+          ].join(', '),
+        )
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+
+      const viewport = getViewport()
+      const bounds = flowWrapperRef.current?.getBoundingClientRect()
+      if (!bounds) {
+        return
+      }
+      const deltaX = normalizeWheelDelta(
+        event.deltaX,
+        event.deltaMode,
+        bounds.width,
+      )
+      const deltaY = normalizeWheelDelta(
+        event.deltaY,
+        event.deltaMode,
+        bounds.height,
+      )
+
+      if (isLikelyTrackpadPan(event)) {
+        void setViewport({
+          ...viewport,
+          x: viewport.x - deltaX * panSpeed,
+          y: viewport.y - deltaY * panSpeed,
+        })
+        return
+      }
+
+      const nextZoom = clamp(
+        viewport.zoom * Math.exp(-deltaY * 0.002 * zoomSpeed),
+        canvasMinZoom,
+        canvasMaxZoom,
+      )
+
+      if (nextZoom === viewport.zoom) {
+        return
+      }
+
+      const pointerX = event.clientX - bounds.left
+      const pointerY = event.clientY - bounds.top
+      const flowX = (pointerX - viewport.x) / viewport.zoom
+      const flowY = (pointerY - viewport.y) / viewport.zoom
+
+      void setViewport({
+        x: pointerX - flowX * nextZoom,
+        y: pointerY - flowY * nextZoom,
+        zoom: nextZoom,
+      })
+    },
+    [getViewport, panSpeed, setViewport, zoomSpeed],
+  )
+
+  useEffect(() => {
+    const flowWrapper = flowWrapperRef.current
+    if (!flowWrapper) {
+      return
+    }
+
+    flowWrapper.addEventListener('wheel', handleCanvasWheel, {
+      capture: true,
+      passive: false,
+    })
+
+    return () => {
+      flowWrapper.removeEventListener('wheel', handleCanvasWheel, true)
+    }
+  }, [handleCanvasWheel])
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
@@ -3663,8 +3928,9 @@ function CanvasView({
         connectionLineType={connectionLineType}
         connectionLineStyle={{ strokeWidth: 1.6 }}
         deleteKeyCode={null}
-        minZoom={0.12}
-        maxZoom={2.5}
+        minZoom={canvasMinZoom}
+        maxZoom={canvasMaxZoom}
+        ref={flowWrapperRef}
         onEdgesChange={handleEdgesChange}
         onEdgeClick={(event, edge) => {
           event.stopPropagation()
@@ -3699,9 +3965,12 @@ function CanvasView({
           }))
           onNodeDragStop(node)
         }}
-        panOnDrag
+        panOnDrag={[1, 2]}
         nodesDraggable
+        zoomOnScroll={false}
         zoomOnDoubleClick={false}
+        panOnScroll={false}
+        onPaneContextMenu={(event) => event.preventDefault()}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#d7d9df" gap={24} />
@@ -5096,8 +5365,10 @@ function CanvasNoteNode({
   data,
   selected,
 }: NodeProps<Node<CanvasFlowNodeData, 'tischNode'>>) {
+  const nodeRootRef = useRef<HTMLDivElement | null>(null)
   const titleInputRef = useRef<HTMLInputElement | null>(null)
   const bodyEditorRef = useRef<CanvasMarkdownEditorHandle | null>(null)
+  const editTargetRef = useRef<'title' | 'body' | null>(null)
   const parsedContent = useMemo(() => splitItemContent(data.content), [data.content])
   const title =
     parsedContent.title ||
@@ -5106,6 +5377,13 @@ function CanvasNoteNode({
       : stripMarkdownTitleSyntax(data.title))
   const body = parsedContent.body
   const [menuOpen, setMenuOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<'title' | 'body' | null>(null)
+  const isEditingTitle = editTarget === 'title'
+  const isEditingBody = editTarget === 'body'
+
+  useEffect(() => {
+    editTargetRef.current = editTarget
+  }, [editTarget])
 
   function updateTitle(nextTitle: string) {
     data.onUpdateContent(data.itemId, composeItemContent(nextTitle, body))
@@ -5116,6 +5394,30 @@ function CanvasNoteNode({
       data.itemId,
       composeItemContent(title, nextBody),
     )
+  }
+
+  function startEditingTitle() {
+    setEditTarget('title')
+  }
+
+  function startEditingBody() {
+    setEditTarget('body')
+  }
+
+  function getReadOnlyPressTarget(target: EventTarget | null) {
+    if (!(target instanceof Element)) {
+      return null
+    }
+
+    if (target.closest('.canvas-note-title-static')) {
+      return 'title' as const
+    }
+
+    if (target.closest('.canvas-note-body')) {
+      return 'body' as const
+    }
+
+    return null
   }
 
   useEffect(() => {
@@ -5132,19 +5434,106 @@ function CanvasNoteNode({
   }, [menuOpen])
 
   useEffect(() => {
+    const nodeRoot = nodeRootRef.current
+    if (!nodeRoot) {
+      return
+    }
+
+    function onDoubleClick(event: MouseEvent) {
+      const target = getReadOnlyPressTarget(event.target)
+      if (!target || editTargetRef.current) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      if (target === 'title') {
+        startEditingTitle()
+        return
+      }
+
+      startEditingBody()
+    }
+
+    nodeRoot.addEventListener('dblclick', onDoubleClick, true)
+
+    return () => {
+      nodeRoot.removeEventListener('dblclick', onDoubleClick, true)
+    }
+  })
+
+  useEffect(() => {
+    if (!isEditingBody) {
+      return
+    }
+
+    function closeBodyEditor(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        nodeRootRef.current?.contains(event.target)
+      ) {
+        return
+      }
+
+      setEditTarget(null)
+    }
+
+    window.addEventListener('pointerdown', closeBodyEditor, true)
+    return () => window.removeEventListener('pointerdown', closeBodyEditor, true)
+  }, [isEditingBody])
+
+  useEffect(() => {
     if (!data.autoFocusBody) {
       return
     }
 
-    if (!title.trim() && titleInputRef.current) {
-      titleInputRef.current.focus()
-      const length = titleInputRef.current.value.length
-      titleInputRef.current.setSelectionRange(length, length)
-      data.onAutoFocusHandled(data.itemId)
+    const animationFrame = window.requestAnimationFrame(() => {
+      if (!title.trim()) {
+        setEditTarget('title')
+        data.onAutoFocusHandled(data.itemId)
+        return
+      }
+
+      setEditTarget('body')
+    })
+
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [data, title])
+
+  useEffect(() => {
+    if (!isEditingTitle) {
       return
     }
 
-  }, [data, title])
+    const animationFrame = window.requestAnimationFrame(() => {
+      titleInputRef.current?.focus()
+      const length = titleInputRef.current?.value.length ?? 0
+      titleInputRef.current?.setSelectionRange(length, length)
+    })
+
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [isEditingTitle])
+
+  useEffect(() => {
+    if (!isEditingBody) {
+      return
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      bodyEditorRef.current?.focusEnd()
+    })
+
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [isEditingBody])
+
+  const nodeClassName = [
+    'canvas-note-node',
+    selected ? 'is-selected' : '',
+    editTarget ? 'is-editing' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <>
@@ -5179,23 +5568,41 @@ function CanvasNoteNode({
           type="source"
         />
       ))}
-      <div className={selected ? 'canvas-note-node is-selected' : 'canvas-note-node'}>
+      <div ref={nodeRootRef} className={nodeClassName}>
         <div className="canvas-note-header">
-          <input
-            ref={titleInputRef}
-            className="canvas-note-title nodrag nowheel"
-            placeholder="Titel"
-            value={title}
-            onChange={(event) => updateTitle(event.target.value)}
-            onKeyDown={(event) => {
-              event.stopPropagation()
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                event.currentTarget.blur()
+          {isEditingTitle ? (
+            <input
+              ref={titleInputRef}
+              className="canvas-note-title nodrag nowheel"
+              placeholder="Titel"
+              value={title}
+              onBlur={() => setEditTarget(null)}
+              onChange={(event) => updateTitle(event.target.value)}
+              onKeyDown={(event) => {
+                event.stopPropagation()
+                if (event.key === 'Enter' || event.key === 'Escape') {
+                  event.preventDefault()
+                  event.currentTarget.blur()
+                }
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            />
+          ) : (
+            <div
+              className={
+                title.trim()
+                  ? 'canvas-note-title canvas-note-title-static'
+                  : 'canvas-note-title canvas-note-title-static is-empty'
               }
-            }}
-            onPointerDown={(event) => event.stopPropagation()}
-          />
+              onDoubleClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                startEditingTitle()
+              }}
+            >
+              {title.trim() || 'Titel'}
+            </div>
+          )}
           <button
             className="canvas-node-open nodrag"
             onClick={(event) => {
@@ -5216,15 +5623,28 @@ function CanvasNoteNode({
             event.stopPropagation()
             setMenuOpen(true)
           }}
+          onDoubleClick={(event) => {
+            if (isEditingBody) {
+              return
+            }
+
+            event.preventDefault()
+            event.stopPropagation()
+            startEditingBody()
+          }}
         >
           <CanvasMarkdownEditor
             ref={bodyEditorRef}
-            autoFocus={data.autoFocusBody && Boolean(title.trim())}
+            autoFocus={
+              data.autoFocusBody && Boolean(title.trim()) && isEditingBody
+            }
             content={body}
+            editable={isEditingBody}
             itemId={data.itemId}
             normalizeImageSrc={data.normalizeImageSrc}
             onAutoFocusHandled={() => data.onAutoFocusHandled(data.itemId)}
             onChange={updateBody}
+            onEscape={() => setEditTarget(null)}
             onPickImage={data.onPickImage}
             placeholder="Schreib hier..."
             resolveImageSrc={data.resolveImageSrc}
