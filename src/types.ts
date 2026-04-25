@@ -18,7 +18,6 @@ export interface Item {
   summary: string
   contentPath: string
   content: string
-  tags: string[]
   status: string
   done: boolean
   imagePath?: string

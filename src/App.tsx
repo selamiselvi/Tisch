@@ -28,6 +28,7 @@ import {
   type NodeChange,
   type NodeProps,
   type NodeTypes,
+  type ResizeParams,
   type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -159,16 +160,28 @@ function normalizeWheelDelta(value: number, mode: number, pageSize: number) {
   return value
 }
 
-function isLikelyTrackpadPan(event: WheelEvent) {
+function isLikelyMouseWheelZoom(event: WheelEvent) {
   if (event.ctrlKey || event.metaKey) {
+    return true
+  }
+
+  if (event.shiftKey || Math.abs(event.deltaX) > 0) {
     return false
   }
 
   if (event.deltaMode !== WheelEvent.DOM_DELTA_PIXEL) {
-    return false
+    return true
   }
 
-  return Math.abs(event.deltaX) > 0 || Math.abs(event.deltaY) < 80
+  const legacyWheelEvent = event as WheelEvent & {
+    wheelDelta?: number
+    wheelDeltaY?: number
+  }
+  const wheelDelta = Math.abs(
+    legacyWheelEvent.wheelDeltaY ?? legacyWheelEvent.wheelDelta ?? 0,
+  )
+
+  return wheelDelta > 0 && wheelDelta % 120 === 0 && Math.abs(event.deltaY) >= 80
 }
 
 function getMaxSidebarProjectsHeight() {
@@ -226,7 +239,7 @@ type CanvasFlowNodeData = {
   normalizeImageSrc: (src: string) => string
   resolveImageSrc: ImageResolver
   onAutoFocusHandled: (itemId: string) => void
-  onResize: (itemId: string, width: number, height: number) => void
+  onResize: (itemId: string, params: ResizeParams) => void
   onDelete: (itemId: string) => void
 }
 
@@ -1374,7 +1387,6 @@ function App() {
       summary: '',
       contentPath: buildItemContentPath(activeProjectId ?? '', title, id),
       content: composeItemContent(title, ''),
-      tags: [],
       kind: 'script',
       status: 'planung',
       done: false,
@@ -1419,7 +1431,6 @@ function App() {
         summary: summaryFromMarkdown(content),
         contentPath: buildItemContentPath(activeProject.id, title, id),
         content,
-        tags: [],
         kind: 'script',
         status: 'planung',
         done: false,
@@ -1825,7 +1836,7 @@ function App() {
     )
   }
 
-  function resizeCanvasNode(itemId: string, width: number, height: number) {
+  function resizeCanvasNode(itemId: string, params: ResizeParams) {
     if (!activeCanvas) {
       return
     }
@@ -1834,7 +1845,13 @@ function App() {
       ...canvas,
       nodes: canvas.nodes.map((node) =>
         node.itemId === itemId
-          ? { ...node, width: Math.round(width), height: Math.round(height) }
+          ? {
+              ...node,
+              x: Math.round(params.x),
+              y: Math.round(params.y),
+              width: Math.round(params.width),
+              height: Math.round(params.height),
+            }
           : node,
       ),
     }))
@@ -3537,7 +3554,7 @@ function CanvasView({
   onPickImage: () => Promise<string | null>
   normalizeImageSrc: (src: string) => string
   resolveImageSrc: ImageResolver
-  onResizeNode: (itemId: string, width: number, height: number) => void
+  onResizeNode: (itemId: string, params: ResizeParams) => void
   onDeleteNode: (itemId: string) => void
   canUndo: boolean
   canRedo: boolean
@@ -3732,7 +3749,7 @@ function CanvasView({
         bounds.height,
       )
 
-      if (isLikelyTrackpadPan(event)) {
+      if (!isLikelyMouseWheelZoom(event)) {
         void setViewport({
           ...viewport,
           x: viewport.x - deltaX * panSpeed,
@@ -4533,7 +4550,22 @@ function BoardColumn({
           <Trash2 size={14} />
         </button>
       </header>
-      <div className="card-stack">
+      <div
+        className="card-stack"
+        onWheelCapture={(event) => {
+          if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+            return
+          }
+
+          event.preventDefault()
+          event.stopPropagation()
+          event.currentTarget.scrollTop += normalizeWheelDelta(
+            event.deltaY,
+            event.deltaMode,
+            event.currentTarget.clientHeight,
+          )
+        }}
+      >
         {cards.map(({ card, item }, index) => {
           if (!item) {
             return null
@@ -4604,13 +4636,6 @@ function BoardColumn({
                   onUpdateContent={onUpdateItemContent}
                   onToggleDone={onToggleDone}
                 />
-                {item.tags.length > 0 && (
-                  <div className="tag-row">
-                    {item.tags.map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                )}
               </article>
             </div>
           )
@@ -5330,7 +5355,7 @@ function toFlowNodes(
     pendingFocusItemId: string | null
     selectedItemId: string | null
     onAutoFocusHandled: (itemId: string) => void
-    onResize: (itemId: string, width: number, height: number) => void
+    onResize: (itemId: string, params: ResizeParams) => void
     onDelete: (itemId: string) => void
   },
 ): Node[] {
@@ -5544,7 +5569,7 @@ function CanvasNoteNode({
         lineClassName="canvas-node-resize-line"
         handleClassName="canvas-node-resize-handle"
         onResizeEnd={(_event, params) => {
-          data.onResize(data.itemId, params.width, params.height)
+          data.onResize(data.itemId, params)
         }}
       />
       {canvasConnectionHandles.map((handle) => (

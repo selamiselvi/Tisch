@@ -15,12 +15,18 @@ function normalizePlanner(input: unknown): PlannerData {
   const planner = input as PlannerData
   if (planner?.schemaVersion === 2 && Array.isArray(planner.items)) {
     // Keep older items visible as Zettels. This also folds the removed
-    // `reference` kind into the remaining Zettel/page model.
+    // `reference` kind into the remaining Zettel/page model, and strips
+    // removed fields that older workspaces may still contain.
     return {
       ...planner,
-      items: planner.items.map((item) =>
-        item.kind === 'script' ? item : { ...item, kind: 'script' },
-      ),
+      items: planner.items.map((item) => {
+        const nextItem = {
+          ...item,
+          kind: item.kind === 'script' ? item.kind : 'script',
+        }
+        delete (nextItem as typeof nextItem & { tags?: unknown }).tags
+        return nextItem
+      }),
     }
   }
 

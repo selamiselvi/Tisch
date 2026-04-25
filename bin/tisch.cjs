@@ -8,7 +8,7 @@ function usage() {
   tisch workspace init
   tisch project list
   tisch project create --name <name> [--description <text>] [--accent <color>]
-  tisch zettel create --project <id-or-name> --title <title> [--body <text>|--body-file <path>] [--tag <tag>]
+  tisch zettel create --project <id-or-name> --title <title> [--body <text>|--body-file <path>]
   tisch board list [--project <id-or-name>]
   tisch board create --project <id-or-name> --title <title> [--column <title> ...]
   tisch board add-column --board <id-or-title> --title <title> [--project <id-or-name>]
@@ -186,7 +186,6 @@ function run(argv) {
         project: required(options, 'project'),
         title: required(options, 'title'),
         body: readBody(options),
-        tags: asArray(options.tag),
         status: options.status ? String(options.status) : undefined,
       }),
     )
@@ -254,7 +253,6 @@ function run(argv) {
         item,
         title: title ? String(title) : undefined,
         body: readBody(options),
-        tags: asArray(options.tag),
         allowDuplicate: Boolean(options['allow-duplicate']),
       })
       return next.created ? next : { ...next, planner: null }
@@ -323,7 +321,6 @@ function run(argv) {
         projectId: project?.id,
         title: required(options, 'title'),
         body: readBody(options),
-        tags: asArray(options.tag),
         status: options.status ? String(options.status) : undefined,
         x: optionalNumber(options, 'x'),
         y: optionalNumber(options, 'y'),
