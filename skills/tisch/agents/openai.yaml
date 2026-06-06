@@ -1,0 +1,8 @@
+interface:
+  display_name: "Tisch"
+  short_description: "Use the Tisch app through its CLI"
+  brand_color: "#2563EB"
+  default_prompt: "Use $tisch to organize this plan into Tisch projects, Zettels, boards, and canvases."
+
+policy:
+  allow_implicit_invocation: true

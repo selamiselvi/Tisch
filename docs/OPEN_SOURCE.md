@@ -40,10 +40,13 @@ done
 
 ## Git History
 
-If private workspace files were ever committed, remove them before making the
-repository public. A safer publishing path is to create a new public repository
-from the current clean tree, or to rewrite history and force-push only after all
-collaborators know that commit SHAs will change.
+If private workspace files or personal agent skills were ever committed, remove
+them before making the repository public. A safer publishing path is to create a
+new public repository from the current clean tree, or to rewrite history and
+force-push only after all collaborators know that commit SHAs will change.
+
+The current `skills/tisch/` directory is intentional: it is the public companion
+skill for Tisch. Historical or personal skill folders should still be removed.
 
 Recommended history rewrite tool:
 

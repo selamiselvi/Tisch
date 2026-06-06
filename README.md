@@ -15,6 +15,7 @@ machine, outside of this Git repository.
 - Freeform canvases with connected nodes
 - Local image import for canvas/page assets
 - Local CLI for agent-friendly workspace changes
+- Companion Codex skill for teaching agents how to use the CLI
 - Shared storage layer for the Electron app and CLI
 
 ## Screenshots
@@ -110,6 +111,21 @@ npm exec tisch -- canvas connect --canvas "Canvas" --from "Hook" --to "CTA"
 Create/list commands return JSON so local automations and AI agents can reuse
 IDs instead of guessing.
 
+## Companion Skill
+
+Tisch includes a Codex companion skill under `skills/tisch/`. The app and CLI are
+the software; the skill teaches an agent how to use the CLI to create and update
+projects, Zettels, boards, cards, canvases, nodes, and connections.
+
+In Codex, ask:
+
+```text
+Install the Tisch skill from https://github.com/selamiselvi/Tisch/tree/main/skills/tisch
+```
+
+Then restart Codex and use `$tisch` in prompts. See
+[docs/AGENT_SKILL.md](docs/AGENT_SKILL.md) for details.
+
 ## Architecture
 
 The UI does not write directly to workspace files. It uses
@@ -138,6 +154,7 @@ bin/                  CLI entry point
 electron/             Electron main and preload scripts
 lib/                  Shared workspace storage logic
 public/               Static public assets
+skills/tisch/         Companion Codex skill for agents
 src/                  React app, styles, types, and seed data
 ```
 
