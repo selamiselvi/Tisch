@@ -124,7 +124,7 @@ Install the Tisch skill from https://github.com/selamiselvi/Tisch/tree/main/skil
 ```
 
 Then restart Codex and use `$tisch` in prompts. See
-[docs/AGENT_SKILL.md](docs/AGENT_SKILL.md) for details.
+[skills/tisch/SKILL.md](skills/tisch/SKILL.md) for the skill instructions.
 
 ## Architecture
 
