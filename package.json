@@ -1,7 +1,25 @@
 {
-  "name": "socialmedia-planning",
-  "private": true,
-  "version": "0.0.0",
+  "name": "tisch",
+  "version": "0.1.0",
+  "description": "Local-first desktop app for planning, writing, and connecting notes across pages, boards, and canvases.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/selamiselvi/Tisch.git"
+  },
+  "homepage": "https://github.com/selamiselvi/Tisch#readme",
+  "bugs": {
+    "url": "https://github.com/selamiselvi/Tisch/issues"
+  },
+  "keywords": [
+    "desktop",
+    "electron",
+    "local-first",
+    "notes",
+    "planning",
+    "react",
+    "typescript"
+  ],
   "type": "module",
   "main": "electron/main.cjs",
   "bin": {

@@ -10,92 +10,92 @@ export const seedPlannerData: PlannerData = {
       id: 'launch-plan',
       name: 'Launch Plan',
       accent: '#2563eb',
-      description: 'Produktideen, Abläufe, Zettel und offene Gedanken.',
+      description: 'Product ideas, content drafts, notes, and open questions.',
     },
     {
       id: 'research',
-      name: 'research',
+      name: 'Research',
       accent: '#0f766e',
-      description: 'Lernprodukt, Sprachlogik, Inhalte und Experimente.',
+      description: 'References, decisions, experiments, and follow-up notes.',
     },
     {
       id: 'operations',
       name: 'Operations',
       accent: '#b45309',
-      description: 'Workflow utility, Dokumente, Workflows und Kommunikation.',
+      description: 'Processes, documents, workflows, and communication.',
     },
     {
       id: 'lab',
       name: 'Labor',
       accent: '#6d5dfc',
-      description: 'Freie Ideen ohne Projektbindung.',
+      description: 'Loose ideas without a fixed project yet.',
     },
   ],
   items: [
     {
-      id: 'item-launch-plan-overview',
+      id: 'item-launch-overview',
       projectId: 'launch-plan',
-      title: 'Launch Plan Arbeitsnotiz',
-      summary: 'Eine freie Seite fuer Gedanken, Szenen, Rohtext und offene Fragen.',
-      contentPath: 'pages/launch-plan-arbeitsnotiz.md',
+      title: 'Project Overview',
+      summary: 'A free page for thoughts, drafts, notes, and open questions.',
+      contentPath: 'pages/project-overview.md',
       kind: 'script',
       status: 'planung',
       done: false,
       createdAt: now,
       updatedAt: now,
-      content: `# Launch Plan Arbeitsnotiz
+      content: `# Project Overview
 
-Das ist eine normale Seite. Sie kann allein stehen, im Board als Karte erscheinen und auf dem Canvas als Node platziert werden.
+This is a regular page. It can stand alone, appear as a board card, and be placed on the canvas as a node.
 
-## Gedanken
+## Notes
 
-- Was ist der kleinste starke Einstieg?
-- Welche Bilder oder Screenshots brauchen wir?
-- Welche Version ist als naechstes produktionsreif?
+- What is the smallest useful next step?
+- Which assets or screenshots are needed?
+- Which draft is ready to refine next?
 `,
     },
     {
-      id: 'item-launch-plan-hook',
+      id: 'item-launch-hook',
       projectId: 'launch-plan',
-      title: 'Hook: schlechtes listing image',
-      summary: 'Dieses eine Foto kann entscheiden, ob jemand dein Auto ueberhaupt anklickt.',
-      contentPath: 'pages/hook-schlechtes-inseratfoto.md',
+      title: 'Opening Hook',
+      summary: 'A short opening note for the first moment of a launch story.',
+      contentPath: 'pages/opening-hook.md',
       kind: 'script',
       status: 'planung',
       done: false,
       createdAt: now,
       updatedAt: now,
-      content: `# Hook: schlechtes listing image
+      content: `# Opening Hook
 
-Dieses eine Foto kann entscheiden, ob jemand dein Auto ueberhaupt anklickt.
+Start with the concrete user problem before explaining the full product.
 
-Kurz, direkt, ohne Erklaerung starten. Danach erst zeigen, warum das Bild schwach ist.
+Keep it short, direct, and specific. Add context only after the first point is clear.
 `,
     },
     {
-      id: 'item-launch-plan-scenes',
+      id: 'item-launch-scenes',
       projectId: 'launch-plan',
-      title: 'Szenenfolge',
-      summary: 'Originalbild, Upload, Ergebnis, Vergleich.',
-      contentPath: 'pages/szenenfolge.md',
+      title: 'Scene Sequence',
+      summary: 'Problem, workflow, result, and next action.',
+      contentPath: 'pages/scene-sequence.md',
       kind: 'script',
       status: 'arbeit',
       done: false,
       createdAt: now,
       updatedAt: now,
-      content: `# Szenenfolge
+      content: `# Scene Sequence
 
-1. Ausgangsbild zeigen.
-2. Upload oder Auswahl zeigen.
-3. Varianten als kurzer Reveal.
-4. Bessere Anzeige als Abschlussbild.
+1. Show the starting problem.
+2. Show the workflow or decision.
+3. Reveal the improved result.
+4. End with the next action.
 `,
     },
   ],
   boards: [
     {
-      id: 'board-launch-plan',
-      title: 'Launch Plan Board',
+      id: 'board-launch',
+      title: 'Launch Board',
       projectId: 'launch-plan',
       columns: [
         { id: 'planung', title: 'Planung' },
@@ -104,13 +104,13 @@ Kurz, direkt, ohne Erklaerung starten. Danach erst zeigen, warum das Bild schwac
       ],
       cards: [
         {
-          id: 'card-launch-plan-hook',
-          itemId: 'item-launch-plan-hook',
+          id: 'card-launch-hook',
+          itemId: 'item-launch-hook',
           columnId: 'planung',
         },
         {
-          id: 'card-launch-plan-scenes',
-          itemId: 'item-launch-plan-scenes',
+          id: 'card-launch-scenes',
+          itemId: 'item-launch-scenes',
           columnId: 'arbeit',
         },
       ],
@@ -118,27 +118,27 @@ Kurz, direkt, ohne Erklaerung starten. Danach erst zeigen, warum das Bild schwac
   ],
   canvases: [
     {
-      id: 'canvas-launch-plan',
-      title: 'Launch Plan Canvas',
+      id: 'canvas-launch',
+      title: 'Launch Canvas',
       projectId: 'launch-plan',
       nodes: [
         {
-          id: 'node-launch-plan-overview',
-          itemId: 'item-launch-plan-overview',
+          id: 'node-launch-overview',
+          itemId: 'item-launch-overview',
           x: 80,
           y: 130,
           width: 230,
         },
         {
-          id: 'node-launch-plan-hook',
-          itemId: 'item-launch-plan-hook',
+          id: 'node-launch-hook',
+          itemId: 'item-launch-hook',
           x: 400,
           y: 90,
           width: 240,
         },
         {
-          id: 'node-launch-plan-scenes',
-          itemId: 'item-launch-plan-scenes',
+          id: 'node-launch-scenes',
+          itemId: 'item-launch-scenes',
           x: 400,
           y: 300,
           width: 240,
@@ -146,14 +146,14 @@ Kurz, direkt, ohne Erklaerung starten. Danach erst zeigen, warum das Bild schwac
       ],
       edges: [
         {
-          id: 'edge-launch-plan-hook-scenes',
-          source: 'node-launch-plan-hook',
-          target: 'node-launch-plan-scenes',
+          id: 'edge-launch-hook-scenes',
+          source: 'node-launch-hook',
+          target: 'node-launch-scenes',
         },
         {
-          id: 'edge-launch-plan-overview-hook',
-          source: 'node-launch-plan-overview',
-          target: 'node-launch-plan-hook',
+          id: 'edge-launch-overview-hook',
+          source: 'node-launch-overview',
+          target: 'node-launch-hook',
         },
       ],
     },
@@ -161,8 +161,8 @@ Kurz, direkt, ohne Erklaerung starten. Danach erst zeigen, warum das Bild schwac
   links: [
     {
       id: 'link-hook-scenes',
-      fromItemId: 'item-launch-plan-hook',
-      toItemId: 'item-launch-plan-scenes',
+      fromItemId: 'item-launch-hook',
+      toItemId: 'item-launch-scenes',
       label: 'fuehrt zu',
     },
   ],

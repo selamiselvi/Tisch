@@ -1,38 +1,54 @@
 # Tisch
 
-Lokale Desktop-App zum Planen, Schreiben und Ordnen von Ideen. Tisch ist kein gehostetes Tool: Nutzdaten liegen lokal auf dem Rechner im App-Datenordner und nicht im Git-Repository.
+Tisch is a local-first desktop app for planning, writing, and arranging ideas.
+The same note can appear as a Markdown page, a card on a board, and a node on a
+canvas.
 
-## Idee
+Tisch is not a hosted service. Your workspace data is stored on your own
+machine, outside of this Git repository.
 
-Der Kern ist ein gemeinsames Zettel-Modell. Ein Zettel kann gleichzeitig sein:
+## Features
 
-- eine Markdown-Seite mit langem Text
-- eine Karte in einem Board
-- ein Node auf einem Canvas
+- Markdown pages for long-form notes
+- Project-based sidebar with notes, boards, and canvases
+- Kanban-style boards with configurable columns
+- Freeform canvases with connected nodes
+- Local image import for canvas/page assets
+- Local CLI for agent-friendly workspace changes
+- Shared storage layer for the Electron app and CLI
 
-Diese Darstellungen sind keine getrennten Daten. Board-Karten und Canvas-Nodes zeigen denselben `Item`, der auch eine volle Markdown-Seite besitzt.
+## Screenshots
+
+![Tisch canvas view](docs/assets/tisch-canvas.png)
+
+![Tisch board view](docs/assets/tisch-board.png)
+
+![Tisch Zettel editor](docs/assets/tisch-zettel.png)
 
 ## Stack
 
-- Electron als Desktop-Shell
-- React + TypeScript fuer die Oberflaeche
-- Vite fuer schnelles Entwickeln
-- React Flow fuer Canvas/Node-Verbindungen
-- react-markdown fuer Seiten-Preview
-- lokale JSON- und Markdown-Dateien als Datenbasis
+- Electron desktop shell
+- React and TypeScript UI
+- Vite development/build tooling
+- React Flow for canvas nodes and edges
+- TipTap for Markdown editing
+- Local JSON and Markdown files as the workspace format
 
-Tauri bleibt eine moegliche spaetere Shell-Alternative. Aktuell ist Electron gewaehlt, weil Node/npm vorhanden sind und die App direkt als eigenes Programm laeuft.
+## Requirements
 
-## Starten
+- Node.js 22 or newer
+- npm
+
+## Getting Started
 
 ```bash
 npm install
 npm start
 ```
 
-`npm start` oeffnet ein eigenes App-Fenster. Es ist kein Chrome-Tab noetig.
+`npm start` opens the Electron app window.
 
-Weitere Kommandos:
+Useful commands:
 
 ```bash
 npm run dev
@@ -42,90 +58,97 @@ npm run electron:preview
 npm exec tisch -- workspace path
 ```
 
-## Lokale Daten
+## Local Data
 
-Der Workspace liegt standardmaessig unter `app.getPath('userData')/workspace`, also im betriebssystemspezifischen App-Datenordner. Damit landen Nutzdaten nicht mehr in Git-Diffs oder auf GitHub.
+By default, Tisch stores user data in the operating-system app data directory:
 
 ```text
-<userData>/workspace/
-  planner.json
-  pages/
-    beispiel.md
+macOS:   ~/Library/Application Support/Tisch/workspace
+Windows: %APPDATA%/Tisch/workspace
+Linux:   ~/.config/Tisch/workspace
 ```
 
-`planner.json` enthaelt Projekte, Items, Boards, Canvas-Nodes und Links. Lange Texte liegen als echte Markdown-Dateien unter `pages/`.
+The workspace contains:
 
-Fuer Entwicklung oder bewusste Dateiablaeufe kann der Speicherort mit `PLANNER_WORKSPACE_DIR=/pfad/zum/workspace` ueberschrieben werden.
+```text
+workspace/
+  planner.json
+  pages/
+    note.md
+  images/
+    imported-image.png
+```
 
-## UI-Grundstruktur
+`planner.json` stores projects, items, boards, canvases, nodes, edges, and
+links. Long note content is stored as Markdown files under `pages/`.
 
-- Linkes Paneel: Projekte und Zettel, einklappbar
-- Mitte: aktive Arbeitsflaeche
-- Rechtes Paneel: Inspector fuer Status, Darstellungen, Datei und Links, optional einklappbar
-- Seite: ein einzelner Schreib-/Lesebereich mit Toggle `Edit` / `Preview`
-- Canvas: einfache Text-/Bild-Nodes mit Linien zwischen Nodes
-- Board: flexible Spalten, Karten, Done-Markierung und Ausblenden fertiger Items
+For development or scripted workflows, override the workspace path:
 
-## KI-freundliche API
+```bash
+TISCH_WORKSPACE_DIR=/path/to/workspace npm exec tisch -- workspace init
+PLANNER_WORKSPACE_DIR=/path/to/workspace npm start
+```
 
-Die UI spricht nicht direkt mit Dateien. Sie nutzt `src/lib/plannerApi.ts`.
-Electron und das lokale CLI teilen sich die Speicherlogik in
-`lib/workspace-store.cjs`.
+`TISCH_WORKSPACE_DIR` is preferred for the CLI. `PLANNER_WORKSPACE_DIR` is kept
+for development compatibility.
 
-In Electron stellt `electron/preload.cjs` diese Funktionen bereit:
+## CLI
 
-- `window.planner.getWorkspacePath()`
-- `window.planner.loadWorkspace()`
-- `window.planner.saveWorkspace(data)`
-- `window.planner.onWorkspaceChanged(callback)`
-
-Dadurch koennen Codex und andere lokale KI-Agenten die App ueber dieselbe
-Datenstruktur manipulieren wie die UI. Wenn die App geoeffnet ist, erkennt sie
-Workspace-Aenderungen und laedt externe Agent-/CLI-Aenderungen neu.
-
-### Lokales CLI
-
-Das Agent-freundliche CLI heisst `tisch`:
+The local CLI is exposed as `tisch`:
 
 ```bash
 npm exec tisch -- workspace init
 npm exec tisch -- project list
-npm exec tisch -- project create --name "Short-form"
-npm exec tisch -- zettel create --project "Short-form" --title "Hook" --body "..."
-npm exec tisch -- canvas create --project "Short-form" --title "Videoidee"
-npm exec tisch -- canvas add-node --canvas "Videoidee" --title "Hook" --body "..."
-npm exec tisch -- canvas connect --canvas "Videoidee" --from "Hook" --to "CTA"
+npm exec tisch -- project create --name "Project"
+npm exec tisch -- zettel create --project "Project" --title "Idea" --body "..."
+npm exec tisch -- board create --project "Project" --title "Board"
+npm exec tisch -- canvas create --project "Project" --title "Canvas"
+npm exec tisch -- canvas add-node --canvas "Canvas" --title "Hook" --body "..."
+npm exec tisch -- canvas connect --canvas "Canvas" --from "Hook" --to "CTA"
 ```
 
-In einer installierten Distribution kann dasselbe CLI spaeter als `tisch ...`
-verlinkt werden. `TISCH_WORKSPACE_DIR=/pfad/zum/workspace` ueberschreibt den
-Standardpfad; `PLANNER_WORKSPACE_DIR` bleibt fuer Entwicklung kompatibel.
+Create/list commands return JSON so local automations and AI agents can reuse
+IDs instead of guessing.
 
-### Codex Skill
+## Architecture
 
-Der wiederverwendbare Codex-Skill ist kein Teil dieses App-Repositories. Lokal
-kann er als `tisch`-Skill unter `~/.codex/skills/tisch` installiert werden. Der
-Skill weist Agenten an, Tisch ueber das CLI zu bedienen und definiert Standards
-fuer Zettel, Short-form-Canvas-Strukturen, B-Roll-Nodes und Verbindungen.
+The UI does not write directly to workspace files. It uses
+`src/lib/plannerApi.ts`, which calls Electron IPC methods exposed by
+`electron/preload.cjs`.
 
-## Datenmodell
+Electron and the CLI share the same storage implementation in
+`lib/workspace-store.cjs`. This keeps app edits and CLI edits compatible.
 
-Die zentralen Typen liegen in `src/types.ts`:
+High-level flow:
 
-- `Project`
-- `Item`
-- `Board`
-- `BoardCard`
-- `IdeaCanvas`
-- `CanvasNode`
-- `PlannerLink`
-- `PlannerData`
+```text
+React UI -> plannerApi.ts -> Electron preload IPC -> electron/main.cjs
+                                            |
+CLI bin/tisch.cjs --------------------------+
+                                            |
+                                    lib/workspace-store.cjs
+                                            |
+                              planner.json + pages/*.md + images/*
+```
 
-## Naechste Ausbaustufen
+## Project Structure
 
-- Item-Editor fuer Tags, Status und Bildpfad
-- echte Link-Verwaltung zwischen Items
-- mehrere Boards und Canvases pro Projekt
-- Bildimport fuer Canvas-Nodes
-- GitHub-Sync aus der App heraus
-- saubere Migration alter Workspace-Versionen
+```text
+bin/                  CLI entry point
+electron/             Electron main and preload scripts
+lib/                  Shared workspace storage logic
+public/               Static public assets
+src/                  React app, styles, types, and seed data
+```
+
+## Development Notes
+
+- Run `npm run lint` before opening a pull request.
+- Run `npm run build` to type-check and produce the Vite build.
+- Do not commit local workspace data. The `workspace/` directory is ignored.
+- Do not commit generated app builds, local env files, logs, or Playwright
+  output.
+
+## License
+
+Tisch is released under the MIT License. See [LICENSE](LICENSE).
